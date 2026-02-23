@@ -13,6 +13,8 @@ vocalls-environment-template/
 ├── cli/                      # Dev tooling (simulate, validate, export, switch)
 ├── vocalls_session_init/     # Session builders & helpers
 ├── projects/                 # One or more IVR projects
+├── architect/                # Architect agent workspace (instructions, grades, human summaries)
+├── debugging/                # Code agent: instructions/ (current_instructions.md), logs/
 ├── env.config.json           # Multi-project configuration & defaults
 └── package.json
 
@@ -234,6 +236,7 @@ Keep these documents synchronized with code changes—AI assistants rely on them
 - `AGENT_MEMORY_GUIDE.md` – Deep dive into memory strategy and collaboration workflows.
 - Vocalls documentation & ES5.1 specification (linked in project templates).
 - `projects/example-starter` – Minimal reference implementation.
+- **Architect agent:** `architect/` – Instruction authoring, human summaries, grades; instructions are copied to `debugging/instructions/current_instructions.md` for the code agent. Use the architect-agent skill for workflows.
 
 ### Documentation & Changelog Maintenance
 
