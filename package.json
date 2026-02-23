@@ -1,0 +1,23 @@
+{
+  "name": "vocalls-environment-template",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vocalls development environment template with simulation, validation, and export tools",
+  "main": "core/minimalVocallsCore.js",
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "scripts": {
+    "init": "node ./init-project.js",
+    "simulate": "node ./cli/simulate.js",
+    "validate": "node ./cli/validate.js",
+    "export": "node ./cli/export.js",
+    "switch": "node ./cli/switch-project.js",
+    "test": "node ./cli/simulate.js --callScript main"
+  },
+  "dependencies": {
+    "acorn": "^8.0.0",
+    "acorn-walk": "^8.0.0",
+    "mem0ai": "^2.1.38"
+  }
+}

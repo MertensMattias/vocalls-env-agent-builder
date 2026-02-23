@@ -1,0 +1,35 @@
+<Root>
+  <Configuration>
+    <Engines>
+      <SpeechSynt Voice="en-US-Wavenet-A" Engine="Google" />
+      <SpeechRecognition Engine="" />
+    </Engines>
+    <Localization>
+      <DefaultLanguage>en-US</DefaultLanguage>
+      <LanguageKey>en</LanguageKey>
+    </Localization>
+    <Variables>
+      <Variable DefaultValue="{''}">__gptActionResult</Variable>
+    </Variables>
+    <BackgroundNoise>true</BackgroundNoise>
+    <BreathInEffect>true</BreathInEffect>
+    <PreferredAudio>TTS</PreferredAudio>
+  </Configuration>
+  <CallScript xmlns:Global="https://designer.vocalls.cz/manual/attributes">
+    <Node Id="0" Type="transient" NextId="7" Title="input" Kind="Input" />
+    <Node Id="6" Type="transient" NextId="" Title="output" Kind="Output" />
+    <Node Id="7" Type="script" NextId="6">
+      <Script>if (__gptFunctionCallHistory &amp;&amp; __gptFunctionCallHistory.length &gt; 0) { 
+     
+    var __lastHistoryIndex = __gptFunctionCallHistory.length - 1;
+    
+    __gptFunctionCallHistory[__lastHistoryIndex].result = __gptActionResult;
+    __gptFunctionCallHistory[__lastHistoryIndex].speakFlowIndexResultSet = context.speakFlow.size - 1; // this will update the order of the result (needed for proper Dialog Node OnEntry handling)
+ 
+    if (__logPrompt) log_debug('Action result (' + __gptFunctionCallHistory[__lastHistoryIndex].name + '): ' + __gptActionResult + ', functionCallIndex: ' + __gptFunctionCallHistory[__lastHistoryIndex].speakFlowIndexResultSet + ', resultIndex: ' + __gptFunctionCallHistory[__lastHistoryIndex].speakFlowIndexResultSet); 
+} else { 
+    if (__logPrompt) log_debug('Cant set action result!'); 
+}</Script>
+    </Node>
+  </CallScript>
+</Root>

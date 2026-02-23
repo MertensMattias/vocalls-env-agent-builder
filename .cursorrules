@@ -1,0 +1,203 @@
+# Cursor Rules - Vocalls Development Environment
+
+## Context & Memory System
+
+**CRITICAL**: This project uses a three-layer memory system for AI agents. Always check these files in order:
+
+1. **`AGENTS.md`** - Framework rules (rarely changes)
+2. **`projects/<name>/project_config.md`** - Project memory (stable context)
+3. **`projects/<name>/workflow_state.md`** - Current state (frequently updated)
+
+**Before starting any task:**
+- Read `workflow_state.md` to understand current state
+- Read `project_config.md` for project context
+- Read `AGENTS.md` for framework constraints
+
+**After completing tasks:**
+- Update `workflow_state.md` with task completion
+- Add Activity Log entry with ISO timestamp
+- Update `project_config.md` if architecture changed
+- Update `CHANGELOG.md` if significant change
+
+See `AGENT_MEMORY_GUIDE.md` for complete memory management guide.
+
+## ES5.1 Constraints - STRICTLY ENFORCED
+
+**✅ ALLOWED:**
+- `var` only (NO `let`/`const`)
+- Template strings: `` `Hello ${x}` ``
+- Destructuring: `var {a, b} = obj`
+- Promises with `.then(success, failure)` (NO `.catch()`)
+- Map, Set, WeakMap, WeakSet
+
+**❌ FORBIDDEN:**
+- Arrow functions: `() => {}` → Use `function() {}`
+- `async/await` → Use promises with `.then()`
+- Optional chaining: `obj?.prop` → Use `safeGet(obj, 'prop')`
+- Nullish coalescing: `a ?? b` → Use `a !== undefined ? a : b`
+- Classes → Use function constructors
+- `for...of` loops → Use `for (var i = 0; i < arr.length; i++)`
+- `import`/`export`/`require` → All code is loaded via framework loader
+
+## Code Patterns
+
+### Variables
+```javascript
+var customerData = getCustomerInfo();
+var result = {};
+```
+
+### Functions
+```javascript
+function processCall(context) {
+    var id = generateId();
+    return id;
+}
+```
+
+### HTTP Requests (NO `.catch()`)
+```javascript
+jsonHttpRequest({
+    url: 'https://api.example.com/data',
+    method: 'POST',
+    body: JSON.stringify(data)
+}).then(function(response) {
+    if (response.ok) {
+        logInfo('Success:', response.data);
+    } else {
+        logError('Failed:', response.error);
+    }
+}, function(error) {
+    logError('Request failed:', error);
+});
+```
+
+### Safe Property Access
+```javascript
+var customerName = safeGet(varObj, 'customer.name', 'Unknown');
+var langCode = getPath(context, 'session.variables.language');
+```
+
+### Error Handling
+```javascript
+try {
+    var result = riskyOperation();
+    processResult(result);
+} catch (error) {
+    logError('Error:', error.message);
+}
+```
+
+## Global Objects & Functions
+
+### Core Vocalls API
+- `context` - Vocalls context (callInfo, session.variables)
+- `varObj` - Call variables (ani, dnis, language, customer)
+- `Storage.readFile()` - Read disk storage
+- `Storage.writeFile()` - Write disk storage
+- `jsonHttpRequest()` - HTTP client (returns thenable)
+- `nowUTC()` - ISO timestamp
+- `logInfo()`, `logWarn()`, `logError()`, `logDebug()` - Logging
+
+### Database (optional, check availability first)
+```javascript
+if (typeof dbQuery !== 'undefined') {
+    var results = dbQuery('SELECT * FROM table WHERE id = ?', [id]);
+}
+```
+
+### Global Library Functions
+- `safeGet(obj, key, defaultValue)` - Safe property access
+- `getPath(obj, path)` - Nested property resolver
+- `isEmpty(obj)` - Check if empty
+- `isValidObject(obj)` - Validate object structure
+- `generateId()` - Generate unique ID
+- `logVar(obj, label)` - Structured logging
+
+## Script Loading Order - PRESERVE
+
+1. `callScript_init/globalCode.js` - Core utilities (loaded first)
+2. `callScript_init/globalVariables.js` - Global initialization
+3. `globalLibraries/active/*` - Libraries in REVERSE alphabetical order
+4. User script (e.g., `callScripts/main.js`) - Call flow
+
+## Project Structure
+
+```
+projects/<name>/
+├── callScript_init/
+│   ├── globalCode.js         # Core utilities (loaded first)
+│   └── globalVariables.js    # Global initialization
+├── callScripts/              # Call scripts
+│   └── main.js
+├── globalLibraries/active/   # Project-specific libraries
+├── exported_callscripts/     # Production exports
+├── project_config.md         # AI context (long-term memory)
+└── workflow_state.md         # Development progress tracker
+```
+
+## Development Workflow
+
+### Testing
+```bash
+npm run simulate -- --callScript main --project <name>
+```
+
+### Validation
+```bash
+npm run validate -- --callScripts --project <name>
+```
+
+### Export
+```bash
+npm run export -- --callScript main --project <name>
+```
+
+## Common Mistakes to Avoid
+
+- ❌ Using `let`/`const` instead of `var`
+- ❌ Arrow functions `() => {}`
+- ❌ `.catch()` on promises (use `.then(success, failure)`)
+- ❌ Optional chaining `obj?.prop`
+- ❌ Not checking function availability before using
+- ❌ Mixing environment code with project code
+- ❌ Not updating `workflow_state.md` after changes
+
+## File Organization
+
+### Framework Files (Don't modify unless extending framework)
+- `core/minimalVocallsCore.js` - Vocalls sandbox
+- `core/loader.js` - Script loader
+- `cli/*.js` - Development tools
+
+### Project Files (Customize for your use case)
+- `projects/<name>/callScript_init/` - Project initialization
+- `projects/<name>/callScripts/` - Call flow scripts
+- `projects/<name>/globalLibraries/active/` - Project-specific libraries
+
+## Code Quality Standards
+
+1. **Naming**: Use descriptive names (functionName, variableName, CONSTANT_NAME)
+2. **Comments**: Document complex logic and business rules
+3. **Error Handling**: Always validate data and handle errors gracefully
+4. **Logging**: Use logInfo, logWarn, logError for debugging
+5. **Validation**: Run validation before deployment
+
+## When Making Changes
+
+1. **Read context first**: Check `workflow_state.md` and `project_config.md`
+2. **Follow patterns**: Match existing code style and structure
+3. **Update state**: Mark tasks complete in `workflow_state.md`
+4. **Add timestamps**: Use ISO format (`2025-01-15T10:30:00Z`)
+5. **Document decisions**: Add to `project_config.md` if architecture changes
+
+## Agent Memory Best Practices
+
+- Keep `project_config.md` focused on stable, long-term context
+- Keep `workflow_state.md` focused on current, dynamic state
+- Always include timestamps in activity logs
+- Archive old plans in "Blueprints" section with reasoning
+- Use specific, actionable task descriptions
+
+See `AGENT_MEMORY_GUIDE.md` for comprehensive memory management guide.
+

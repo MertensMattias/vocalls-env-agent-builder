@@ -1,0 +1,29 @@
+<Root>
+  <Configuration>
+    <Engines>
+      <SpeechSynt Voice="true" Engine="" />
+      <SpeechRecognition Engine="" />
+    </Engines>
+    <Localization>
+      <DefaultLanguage></DefaultLanguage>
+      <LanguageKey>en</LanguageKey>
+    </Localization>
+    <Variables>
+      <Variable DefaultValue="{'The user is a customer of ABC Bank.'}">__userInfo</Variable>
+      <Variable DefaultValue="{'ABC Bank is open 24 hours every day and provides a wide range of banking services including checking and savings accounts, personal and business loans, credit cards, and online banking.'}">__companyInformation</Variable>
+      <Variable DefaultValue="{&quot;- Account Management: Customers can open or close checking and savings accounts online or at any branch. - Loan Information: Personal, auto, and mortgage loans are available.&quot;}">__knowledge</Variable>
+    </Variables>
+    <BackgroundNoise>true</BackgroundNoise>
+    <BreathInEffect>true</BreathInEffect>
+    <PreferredAudio>TTS</PreferredAudio>
+  </Configuration>
+  <CallScript xmlns:Global="https://designer.vocalls.cz/manual/attributes">
+    <Node Id="0" Type="transient" NextId="7" Title="input" Kind="Input" />
+    <Node Id="6" Type="transient" NextId="" Title="output" Kind="Output" />
+    <Node Id="7" Type="script" NextId="6">
+      <Script>__generalUserInfo = __userInfo; 
+__generalKnowledge = __knowledge; 
+__companyInformation = __companyInformation;</Script>
+    </Node>
+  </CallScript>
+</Root>

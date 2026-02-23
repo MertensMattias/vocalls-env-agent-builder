@@ -1,0 +1,1711 @@
+<Root>
+  <Configuration>
+    <Engines>
+      <SpeechRecognition Engine="" />
+    </Engines>
+    <Localization>
+      <DefaultLanguage>en</DefaultLanguage>
+      <LanguageKey>en</LanguageKey>
+    </Localization>
+    <Variables>
+      <Variable DefaultValue="{&quot;default&quot;}">__gptProvider</Variable>
+      <Variable DefaultValue="{&quot;default&quot;}">__gptModel</Variable>
+      <Variable DefaultValue="{&quot;&quot;}">__gptServiceHost</Variable>
+      <Variable DefaultValue="{0}">__temperature</Variable>
+      <Variable DefaultValue="{1300}">__silenceWindow</Variable>
+      <Variable DefaultValue="{&quot;default&quot;}">__dialogControlOnEntry</Variable>
+      <Variable DefaultValue="{true}">__usePersonaAndKB</Variable>
+      <Variable DefaultValue="{false}">__intentClassifierMode</Variable>
+      <Variable DefaultValue="{'Find out what the user needs.'}">__objective</Variable>
+      <Variable DefaultValue="{'Welcome the user, introduce yourself and ask how you can help them.'}">__message</Variable>
+      <Variable DefaultValue="{'hi, hello'}">__hints</Variable>
+    </Variables>
+    <BackgroundNoise>true</BackgroundNoise>
+    <BreathInEffect>true</BreathInEffect>
+    <PreferredAudio>TTS</PreferredAudio>
+  </Configuration>
+  <CallScript xmlns:Global="https://designer.vocalls.cz/manual/attributes">
+    <Node Id="0" Type="transient" NextId="22" Title="input" Kind="Input" />
+    <Node Id="22" Type="script" NextId="825">
+      <Script>if (typeof __persona === 'undefined' || __persona === null) {
+    
+    // persona NOT exists
+    var _errMessage = 'Use "Bot persona" component for initialization of the bot first!';
+    log_error(_errMessage);
+    throw _errMessage;
+    return;
+}
+
+if (typeof __gptMaxTokens === "undefined") {
+    var _errMessage = 'Please update component "Bot persona"!';
+    log_error(_errMessage);
+    throw _errMessage;
+    return;
+}
+
+
+// check if we are chat or voice bot 
+__conversationType = 'chatbot';
+__conversationLanguage = context.language.substr(0, 2);
+
+try {
+    if (context.callInfo.from) {
+        __conversationType = 'voicebot';
+    }
+} catch (e) {
+
+}
+
+
+/* default model, provider and host overide */
+if (!__gptProvider || __gptProvider == 'default') __gptProvider = __defaultLLMProvider;
+if (!__gptModel || __gptModel == 'default') __gptModel = __defaultModel;
+if (!__gptServiceHost || __gptServiceHost == 'default') __gptServiceHost = __defaultServiceHost;
+
+if (!__gptServiceHost || __gptServiceHost == 'default') {
+    switch (__gptProvider) {
+        case "AzureOpenAI": { __gptServiceHost = null; break; }
+        case "OpenAI": { __gptServiceHost = "openai"; break; }
+        case "Gemini": { __gptServiceHost = "gemini"; break; }
+        case "Claude": { __gptServiceHost = "claude"; break; }
+    }
+}
+if (!__gptServiceHost) __gptServiceHost = null;
+
+
+if (typeof __logPrompt === 'undefined') {
+    __logPrompt = false;
+} else {
+    if (__logPrompt == 'true' || __logPrompt === true) {
+        __logPrompt = true;
+    } else {
+        __logPrompt = false;
+    }
+}
+
+
+__currentComponentId = context.currentNode.id;
+if (context.currentNode.id.indexOf('-') &gt;= 0) {
+    __currentComponentId = context.currentNode.id.substr(0, context.currentNode.id.lastIndexOf('-'));
+}
+
+if (__logPrompt) {
+    log_debug("Entering DialogNode ID " + __currentComponentId);
+}
+
+__languageShortCode = context.language.substr(0, 2);
+
+/* init internal variables */
+__gptComponentId = context.currentNode.id; // used to filter function call history only for component where fuctions were available
+__lastSpeaker = __gptGetLastSpeaker();
+__firstRequest = true;
+__gptOutput = null;
+__gptFunctionCall = null;
+__gptRepeatedCall = false;
+__gptNoInputCounter = 0;
+__gptDialogBargeInNodeId = "1219";
+__sayInstruction = [];
+__confirmIntentMode = 0;
+__gptNoInputMaxLoopsDefault = 5;
+__byeFromClient = false;
+__byeFromBot = false;
+__chatEndedCounter = 0;
+__now = '';
+__streamRequest = null;
+__resultArrived = false;
+__repCounter = 0;
+__speak = false;
+__recognize = false;
+__requestCounter = 0;
+__gptIntentClassifierTimeout = false;
+__gptUnfinishedInputCounter = 0;
+
+__gptHTMLorMDused = false;
+__gptIntents = [];
+__gptMaxLoops = null;
+__gptLoopCounter = 0;
+__streamWaitCounter = 0;
+__gptMaxLoopsLabel = '';
+__gptNoInputLoops = __gptNoInputMaxLoopsDefault;
+__gptNoInputLoopsLabel = '';
+__gptOutputConfirmation = {}; // output counter - used for explicit confirmation
+__gptFunctionsDefinition = [];
+
+
+/* create hints */
+__gptBoostPhrases = '';
+if (__hints) {
+    __gptBoostPhrases = __hints;
+}
+if (__persona.name) {
+    __gptBoostPhrases += ',' + __persona.name;
+}
+if (__persona.companyName) {
+    __gptBoostPhrases += ',' + __persona.companyName;
+}
+if (__logPrompt) {
+    log_debug("Boost phrases: " + __gptBoostPhrases);
+}
+
+
+if (__conversationType == 'chatbot') {
+    __recognitionNodeDefaultMinTimeout = 0;
+    __recognitionNodeDefaultMaxTimeout = 0;
+} else {
+    __recognitionNodeDefaultMinTimeout = 8000; // recognition node min timeout
+    __recognitionNodeDefaultMaxTimeout = 30000; // recognition node max timeout
+}
+
+__rDfMnT = __recognitionNodeDefaultMinTimeout;
+__rDfMxT = __recognitionNodeDefaultMaxTimeout;
+
+
+if (!String.prototype.replaceAll) {
+    String.prototype.replaceAll = function (str, newStr) {
+
+        // If a regex pattern 
+        if (Object.prototype.toString.call(str).toLowerCase() === '[object regexp]') {
+            return this.replace(str, newStr);
+        }
+
+        // If a string 
+        return this.replace(new RegExp(str, 'g'), newStr);
+
+    };
+}
+
+
+global.transformFunctionName = function (text) {
+    if (text == null) throw "Function name is empty!";
+    text = text.trim();
+    text = text.toLowerCase(); // Convert to lowercase
+    text = text.replace(/["'{}]/g, '') // remove quotes and brackets
+    text = text.replace(/[^a-z0-9]/g, '_'); // Replace all non-alphanumeric characters with underscores
+    text = text.replace(/_+/g, '_'); // Replace multiple underscores in a row with a single underscore
+    return text;
+}
+
+__gptConvertDataType = function (dataType) {
+    if (dataType) {
+        switch (dataType) {
+            case "text": return "string";
+            case "number": return "number";
+            case "phone": return "string";
+            case "address": return "string";
+            case "date": return "string";
+            case "ordinal": return "integer";
+            case "cardinal": return "integer";
+            case "integer": return "integer";
+        }
+        return "string";
+    } else {
+        return "string";
+    }
+}
+
+/* init actions */
+__gptIntentClassifierChoices = "When you understand the intent (category), trigger function \"submit_intent\" with the correct ID of the users intention.\nHere is the list of all possible intents (categories) and their descriptions:\n[\n";
+
+for (var i = 0; i &lt; __componentOutputRelationConfig.length; i++) {
+
+    /*log_debug('procesing intent: '+__componentOutputRelationConfig[i].Name);*/
+
+    if (__componentOutputRelationConfig[i].SubType == 'noInput') {
+        __gptNoInputLoops = parseInt(__componentOutputRelationConfig[i].MaxLoops);
+        __gptNoInputLoopsLabel = __componentOutputRelationConfig[i].label;
+        if (isNaN(__gptNoInputLoops)) {
+            __gptNoInputLoops = __gptNoInputMaxLoopsDefault;
+        }
+    }
+
+    if (__componentOutputRelationConfig[i].SubType == 'maxLoops') {
+        __gptMaxLoops = parseInt(__componentOutputRelationConfig[i].MaxLoops);
+        __gptMaxLoopsLabel = __componentOutputRelationConfig[i].label;
+        if (isNaN(__gptMaxLoops)) {
+            __gptMaxLoops = null;
+        }
+    }
+
+    if (__componentOutputRelationConfig[i].SubType == 'dynamicOutput' ||
+        __componentOutputRelationConfig[i].SubType == 'entityExtractionOutput') {
+
+        try {
+            if (__componentOutputRelationConfig[i].ApplyWhen == false) {
+                continue; // skip intent
+            }
+        } catch {
+            log_warn('ApplyWhen on intent ' + __componentOutputRelationConfig[i].Name + ' is invalid!');
+        }
+
+        __gptOutputConfirmation[__componentOutputRelationConfig[i].Name] = 0; // output counter - used for explicit confirmation
+
+        var gptIntentTmp = {
+            "name": transformFunctionName(__componentOutputRelationConfig[i].Name),
+            "description": /*"Call this function when: " +*/ __componentOutputRelationConfig[i].Description
+        };
+
+        // append intents to global llm prompt
+        if (__intentClassifierMode == true &amp;&amp; __componentOutputRelationConfig[i].SubType == 'dynamicOutput') {
+            __gptIntentClassifierChoices += "\t{\n\t\t\"id\": \"" + __componentOutputRelationConfig[i].Name + "\",\n\t\t\"description\": \"" + __componentOutputRelationConfig[i].Description + "\"\n\t},\n";
+
+            // intent validation
+            if (!__componentOutputRelationConfig[i].Description) log_warn("Missing description in intent " + __componentOutputRelationConfig[i].Name);
+            if (__componentOutputRelationConfig[i].Confirmation != 'None') log_warn("In Intent classifier mode all confirmations must be disabled. Set Confirmation to None on intent " + __componentOutputRelationConfig[i].Name);
+        }
+
+        if (__componentOutputRelationConfig[i].SubType == 'entityExtractionOutput') {
+
+            gptIntentTmp.parameters = {
+                "type": "object",
+                "properties": {
+                },
+                "required": [],
+                "additionalProperties": false
+            }
+
+            var requiredAttributes = [];
+
+            // backward compatibility with LLM bot v1 where was single entity
+            if (__componentOutputRelationConfig[i].EntityName) {
+                gptIntentTmp.parameters.properties[__componentOutputRelationConfig[i].EntityName] = {
+                    "type": __gptConvertDataType(__componentOutputRelationConfig[i].EntityType),
+                    "description": __componentOutputRelationConfig[i].EntityDescription
+                }
+                if (__componentOutputRelationConfig[i].EntityRequired == true) {
+                    requiredAttributes.push(__componentOutputRelationConfig[i].EntityName);
+                }
+            } else if (__componentOutputRelationConfig[i].Entities) {
+                // Parse "Entities" object
+                var __entities = null;
+                try {
+                    __entities = JSON.parse(__componentOutputRelationConfig[i].Entities);
+
+                    for (var j = 0; j &lt; __entities.length; j++) {
+                        var __entity = __entities[j];
+
+                        if (__entity.Name) {
+
+                            var __descText = __entity.Description; // default description is always fallback
+
+                            if (context.settings
+                                &amp;&amp; context.settings.languageKey
+                                &amp;&amp; __entity["Description_" + context.settings.languageKey]) {
+                                __descText = __entity["Description_" + context.settings.languageKey];
+                            }
+
+                            if (!__descText) {
+                                log_warn("Missing description for entity " + __entity.Name + " in action " + __componentOutputRelationConfig[i].Name);
+                            }
+
+                            gptIntentTmp.parameters.properties[__entity.Name] = {
+                                "type": __gptConvertDataType(__entity.Type),
+                                "description": __descText
+                            }
+                            if (__entity.Required == "true" || __entity.Required === true) {
+                                requiredAttributes.push(__entity.Name);
+                            }
+                        }
+                    }
+                    
+                } catch (err) {
+                    var _errMessage = 'Error when parsing entities! Action: ' + __componentOutputRelationConfig[i].Name + ', entities: ' + __componentOutputRelationConfig[i].Entities + ', Error: ' + err;
+                    log_error(_errMessage);
+                    throw _errMessage;
+                    return;
+                }
+            } else {
+                // action has no entities
+            }
+
+            /*// slot 1
+            if (__componentOutputRelationConfig[i].Slot1_Name) {
+                gptIntentTmp.parameters.properties[__componentOutputRelationConfig[i].Slot1_Name] = {
+                    "type": __gptConvertDataType(__componentOutputRelationConfig[i].Slot1_Type),
+                    "description": __componentOutputRelationConfig[i].Slot1_Description
+                }
+                if (__componentOutputRelationConfig[i].Slot1_Required == 'true') {
+                    requiredAttributes.push(__componentOutputRelationConfig[i].Slot1_Name);
+                }
+            }
+
+            // slot 2
+            if (__componentOutputRelationConfig[i].Slot2_Name) {
+                gptIntentTmp.parameters.properties[__componentOutputRelationConfig[i].Slot2_Name] = {
+                    "type": __gptConvertDataType(__componentOutputRelationConfig[i].Slot2_Type),
+                    "description": __componentOutputRelationConfig[i].Slot2_Description
+                }
+                if (__componentOutputRelationConfig[i].Slot2_Required == 'true') {
+                    requiredAttributes.push(__componentOutputRelationConfig[i].Slot2_Name);
+                }
+            }
+
+            // slot 3
+            if (__componentOutputRelationConfig[i].Slot3_Name) {
+                gptIntentTmp.parameters.properties[__componentOutputRelationConfig[i].Slot3_Name] = {
+                    "type": __gptConvertDataType(__componentOutputRelationConfig[i].Slot3_Type),
+                    "description": __componentOutputRelationConfig[i].Slot3_Description
+                }
+                if (__componentOutputRelationConfig[i].Slot3_Required == 'true') {
+                    requiredAttributes.push(__componentOutputRelationConfig[i].Slot3_Name);
+                }
+            }
+
+            // slot 4
+            if (__componentOutputRelationConfig[i].Slot4_Name) {
+                gptIntentTmp.parameters.properties[__componentOutputRelationConfig[i].Slot4_Name] = {
+                    "type": __gptConvertDataType(__componentOutputRelationConfig[i].Slot4_Type),
+                    "description": __componentOutputRelationConfig[i].Slot4_Description
+                }
+                if (__componentOutputRelationConfig[i].Slot4_Required == 'true') {
+                    requiredAttributes.push(__componentOutputRelationConfig[i].Slot4_Name);
+                }
+            }
+
+
+            // slot 5
+            if (__componentOutputRelationConfig[i].Slot5_Name) {
+                gptIntentTmp.parameters.properties[__componentOutputRelationConfig[i].Slot5_Name] = {
+                    "type": __gptConvertDataType(__componentOutputRelationConfig[i].Slot5_Type),
+                    "description": __componentOutputRelationConfig[i].Slot5_Description
+                }
+                if (__componentOutputRelationConfig[i].Slot5_Required == 'true') {
+                    requiredAttributes.push(__componentOutputRelationConfig[i].Slot5_Name);
+                }
+            }*/
+
+            gptIntentTmp.parameters.required = requiredAttributes;
+
+            /*log_debug("function set properly!");
+            log_debug(JSON.stringify(gptIntentTmp));*/
+        }
+
+        // TODO: maybe enable turn on and off in Properties?
+        if (__componentOutputRelationConfig[i].SubType == 'entityExtractionOutput') {
+            //log_debug(JSON.stringify(gptIntentTmp));
+            __gptIntents.push(gptIntentTmp);
+        }
+    }
+}
+
+// repeated call detection
+if (!global.hasOwnProperty("__gpt_enteredNodes"))
+    __gpt_enteredNodes = [];
+
+var idParts = context.currentNode.id.split("-");
+
+if (!!idParts &amp;&amp; idParts.length) {
+    /*var thisNodeId = idParts[0]; -- bug found in: https://vocalls.atlassian.net/browse/CS-1113 */
+    var thisNodeId = idParts.length &gt; 1
+        ? idParts[idParts.length - 2]  // DialogNode is in a Tab
+        : idParts[0];                  // DialogNode is in default Tab
+
+
+    if (__gpt_enteredNodes.includes(thisNodeId))
+        __gptRepeatedCall = true;
+    else
+        __gpt_enteredNodes.push(thisNodeId);
+}
+
+
+__gptIntentClassifierChoices += "]\n\nYou can also trigger another tool/functions when customer will ask for something else.";
+
+//log_debug(__gptIntentClassifierChoices);
+
+// add hardcoded intents
+if (__intentClassifierMode == true) {
+    __gptIntents.push({
+        "name": "submit_intent",
+        "description": "Submit the intent of the user.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "intent_id": {
+                    "type": "string",
+                    "description": "ID of the intent"
+                }
+            },
+            "required": ["intent_id"]
+        }
+    });
+}
+
+/*__gptIntents.push({
+    "name": "user_wants_to_wait",
+    "description": "The user asked the assistant to wait a moment",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "implicit": {
+                "type": "boolean",
+                "description": "Set to true unless the user has explicitly asked the assistant to wait. Otherwise false"
+            }
+        },
+        "required": ["implicit"]
+    }
+});*/
+
+
+/*__gptIntents.push({
+    "name": "user_asks_to_wait",
+    "description": "The user has requested the assistant to wait (by saying 'wait', 'a moment please', or similar)",
+    "parameters": {
+        "type": "object",
+        "properties": {
+        }
+    }
+});*/
+
+/*__gptIntents.push({
+    "name": "user_in_progress",
+        "description": "The user has started speaking, is in progress of forming a reply or otherwise said an incomplete message (example: 'so', 'well', etc.) so the assistant needs to wait for the full response.",
+            "parameters": {
+        "type": "object",
+            "properties": {
+        }
+    }
+});*/
+
+
+
+for (let i = 0; i &lt; __gptIntents.length; i++) {
+    if (__gptIntents[i]) {
+        if (!__gptIntents[i].parameters) {
+            __gptIntents[i].parameters = {
+                "type": "object", "properties": {}
+            }
+        }
+        __gptFunctionsDefinition.push(__gptIntents[i]);
+    }
+}
+
+//log_debug("GPT functions all: ");
+//log_debug(JSON.stringify(__gptFunctionsDefinition));
+
+
+__gptDialog_description = function () {
+    if (__usePersonaAndKB == false) {
+        return __objective;
+    } else {
+        return __gptDialog_getBasePrompt(__objective);
+    }
+}
+
+__exampleMessages = [
+];
+
+__sampleConversations = null; // obsolete, not needed now
+if (__sampleConversations) {
+    var _someDate = new Date();
+
+    _someDate.setDate(_someDate.getDate() - 25);
+
+    __exampleMessages.push({ "role": "system", "content": "Sample dialog (" + _someDate.toFormattedString("dddd") + " " + _someDate.toLocalized() + "):" });
+    __exampleMessages = __exampleMessages.concat(__sampleConversations);
+    __exampleMessages.push({ "role": "system", "content": "New dialog (" + new Date().toFormattedString("dddd") + " " + new Date().toLocalized() + "):" });
+
+    __samplesExists = true;
+}
+
+/**
+ * Returns current node prefix
+ * @return {string} prefix
+ */
+__gptDialog_getNodePrefix = function () {
+    var separator = "-";
+    var currentId = context.currentNode.id.split(separator);
+
+    return currentId.length &gt; 1
+        ? currentId.slice(0, -1).join(separator) + separator
+        : "";
+};
+
+/**
+ * Makes a local goto destination nodeId including prefix
+ * @param {string} nodeId
+ * @return {string} full nodeId
+ */
+__gptDialog_makeLocalNodeId = function (nodeId) {
+    if (global.hasOwnProperty("__gptDialogComponentIdPrefix") &amp;&amp; __gptDialogComponentIdPrefix != null)
+        return __gptDialogComponentIdPrefix + nodeId;
+
+    if (!context.currentNode.id)
+        return nodeId;
+
+    var separator = "-";
+    var output = context.currentNode.id.split(separator);
+
+    output[output.length - 1] = nodeId;
+    return output.join(separator);
+};
+
+__gptDialogComponentIdPrefix = __gptDialog_getNodePrefix();
+__gptDialogVADEnabled = __persona.allowBargeIn;
+__gptSkipVAD = false;
+
+__gptDialog_onVoiceDetected = function () {
+    var destination = __gptDialog_makeLocalNodeId(__gptDialogBargeInNodeId);
+
+    if (__logPrompt)
+        log_debug("VAD detected! Processing in node ID: " + destination);
+
+    goto(destination); /* because of concurrent JS execution !! */
+    stopVoiceDetection();
+    stopPlayingAudio();
+}
+
+__gptDialog_getSimplifiedHistory = function (maxRows = null) {
+    var msgHistory = '';
+    var prevMsgs = __gptDialog_getPrevMessages();
+    var _fromPos = 0;
+
+    if (maxRows != null &amp;&amp; prevMsgs.length &gt; maxRows) {
+        _fromPos = prevMsgs.length - maxRows;
+    }
+
+    for (var i = _fromPos; i &lt; prevMsgs.length; i++) {
+        if (prevMsgs[i].role == 'assistant' &amp;&amp; prevMsgs[i].content) {
+            msgHistory += "Assistant: " + prevMsgs[i].content + "\n";
+        } else if (prevMsgs[i].role == 'user') {
+            msgHistory += "User: " + prevMsgs[i].content + "\n";
+        }
+    }
+    return msgHistory;
+}
+
+
+__gptDialog_getSystemMessage = function (message) {
+    return {
+        "role": "system",
+        "content": message
+    }
+}
+
+
+__gptIsValidHtml = function (html) {
+    html = html.replace(/&lt;[^&gt;]*\/\s?&gt;/g, '');      // Remove all self closing tags
+    html = html.replace(/&lt;(br|hr|img).*?&gt;/g, '');  // Remove all &lt;br&gt;, &lt;hr&gt;, and &lt;img&gt; tags
+    var openingTags = html.match(/&lt;[^\/].*?&gt;/g) || [];        // Get remaining opening tags
+    var closingTags = html.match(/&lt;\/.+?&gt;/g) || [];           // Get remaining closing tags
+
+    return (openingTags.length === closingTags.length);
+}
+
+__gptIsValidXML = function(text) {
+    try {
+        XML.parseSequential(text);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+__gptIsXML = function (input) {
+    return /&lt;[^&lt;&gt;]+&gt;/.test(input);
+}
+
+__gptIsMarkdown = function (input) {
+    return /^#|\*\*/m.test(input);
+}
+
+getLastDialogNodeOutputName = function() {
+    return __gptFunctionCall;
+}
+
+__gptInput = null;
+__gptLastDialogMessage = null; // bot, user, action
+__gptLastActionResult = null;
+__lastMessage = null;
+__lastMessages = __gptDialog_getPrevMessages();
+
+//log_debug('History to evaluate: ' + JSON.stringify(__lastMessages));
+
+for (var i = __lastMessages.length-1; i &gt;= 0; i--) {
+    __lastMessage = __lastMessages[i];
+
+    if (__lastMessage['role'] == 'function') {
+        __gptLastDialogMessage = 'action';
+        __gptLastActionResult = __lastMessage['content'];
+        break;
+    } else if (__lastMessage['role'] == 'user') {
+        __gptInput = __lastMessage['content'];
+        __gptLastDialogMessage = 'user';
+        break;
+    } else if (__lastMessage['role'] == 'assistant' &amp;&amp; __lastMessage['function_call']) {
+        __gptLastDialogMessage = 'action';
+        break;
+    } else if (__lastMessage['role'] == 'assistant') {
+        __gptLastDialogMessage = 'bot';
+        break;
+    }
+}
+
+//log_debug('Last dialog message: ' + __gptLastDialogMessage);
+
+if (__message == '') {
+    __message = null;
+}
+if (__message &amp;&amp; __message.length &lt;= 2) {
+    __message = null; // this could fix issue whem message contains two apostrohpes -&gt; no valid GPT instruct using just two letters!
+}
+
+
+// validation IF ALL functions and their result are in the history!
+var __functionCallCount = 0;
+var __functionResultCount = 0;
+
+for (var i = 0; i &lt; __lastMessages.length; i++) {
+    if (__lastMessages[i].function_call) __functionCallCount++;
+    if (__lastMessages[i].role == "function") __functionResultCount++;
+}
+
+var __gptFunctionCallHistoryCount = 0;
+for (var i = 0; i &lt; __gptFunctionCallHistory.length; i++) {
+    if (__gptFunctionCallHistory[i].componentId == __gptComponentId) {
+        __gptFunctionCallHistoryCount++; // count only functions in current Dialog Node
+    }
+}
+
+var __validFunctionCall = true;
+if (__functionCallCount != __functionResultCount) __validFunctionCall = false;
+if (__functionCallCount != __gptFunctionCallHistoryCount) __validFunctionCall = false;
+
+if (!__validFunctionCall &amp;&amp; __gptDialogHistoryStartFrom == 0) {
+    log_warn("The number of action(functions) does not match! Action history count: " + __gptFunctionCallHistoryCount +" (total: " + __gptFunctionCallHistory.length + "), function call count: " + __functionCallCount + ", results found: " + __functionResultCount);
+    log_warn(JSON.stringify(__gptFunctionCallHistory));
+    log_warn(JSON.stringify(__lastMessages));
+}
+
+// evaluate if last result contains HTML or MD
+if (__gptLastDialogMessage == "action" &amp;&amp; __gptLastActionResult) {
+    if (__gptIsXML(__gptLastActionResult)) {
+        __gptHTMLorMDused = true;
+    } else if (__gptIsMarkdown(__gptLastActionResult)) {
+        __gptHTMLorMDused = true;
+    }
+}
+
+// override __dialogControlOnEntry behavior
+if (typeof __gpt_dialogControlOnEntry !== 'undefined' &amp;&amp; __gpt_dialogControlOnEntry != null) {
+    __dialogControlOnEntry = __gpt_dialogControlOnEntry;
+}</Script>
+    </Node>
+    <Node Id="77" Type="case" FallbackId="240">
+      <When Eval="__repCounter % 2 == 0" NextId="245" />
+    </Node>
+    <Node Id="346" Type="case" FallbackId="298">
+      <When Eval="__gpt_confirmation.length &gt; 0" NextId="344" />
+    </Node>
+    <Node Id="121" Type="case" FallbackId="85">
+      <When Eval="__conversationType == 'chatbot'" NextId="298" />
+    </Node>
+    <Node Id="62" Type="script" NextId="406">
+      <Script>if (__resultArrived) return delay(100);
+
+__speak = false; 
+__recognize = false; 
+
+
+request = {
+    "model": __gptCurrentModel,
+    "split_on": /((?:[^MD]rs?\.|[^Mr]s\.|[^-.:\s]\s+\d+\.|[^\s\d]\d+\.|[^rs\d]\.|[-?!])\s+)[A-Z\n]/,
+    "messages": __gptCurrentMessages, 
+    /*"temperature": parseFloat(__temperature.toString()), */
+    "top_p": 1, 
+    "service_host": __gptServiceHost, 
+    "frequency_penalty": 0, 
+    "presence_penalty": 0,
+    "seed": __gptSeed,
+    /*"max_tokens": __gptMaxTokens,*/
+    "share_connection": true
+}
+
+if (__gptModel.indexOf("gpt-5") &gt;= 0) {
+    request["max_completion_tokens"] = __gptMaxTokens;
+} else {
+    request["max_tokens"] = __gptMaxTokens;
+    request["temperature"] = parseFloat(__temperature.toString());
+}
+
+
+
+
+request.functions = null;
+if (__gptIntents &amp;&amp; __confirmIntentMode == 0 &amp;&amp; (__sayInstruction == null || __sayInstruction.length == 0)) {
+    if (__gptFunctionsDefinition != null &amp;&amp; __gptFunctionsDefinition.length == 0) {
+        request.functions = null;
+    } else {
+        request.functions = __gptFunctionsDefinition;
+    }
+}
+
+__confirmIntentMode = 0; //clear FLAG for confirmation request
+
+ 
+__lastGptRequest = request.messages; 
+
+ 
+if (__gptLogCounter == 0 &amp;&amp; __logPrompt) {
+    __gptLogCounter++;
+    log_debug("GPT request: " + JSON.stringify(request)); 
+} 
+
+if (!__streamRequest) { 
+    __streamRequest = gptRequest("chat/completions", request);
+
+    // start - 15*200 ms for response
+    if (typeof Task === "undefined") {
+        // start - 15*200 ms for response
+        __streamWaitAttempts = 15;
+    }
+} 
+
+if (__streamWaitAttempts === 15 || __streamWaitAttempts === null) {
+    // at first or during repeat continue
+    __streamRequest.then( 
+        function (result) { 
+            __gptRequestEnd = new Date();
+            __gptRequestTTFT = __gptRequestEnd - __gptRequestStart; // time to first token
+
+            __streamWaitAttempts = null; // wait signal for next response
+            __resultArrived = true;
+
+            if (__logPrompt) {
+                log_debug("GPT response (" + __gptRequestTTFT+"ms):" + JSON.stringify(result)); 
+            }
+
+            __streamRequest = null; 
+            
+            if (result.success) {
+                __requestCounter = 0; 
+                
+                if (!result.response || result.response == "[DONE]") { 
+                    __recognize = true; 
+
+                    /* __speak is false, so we can disable VAD immediatelly */
+                    if (__gptDialogVADEnabled) {
+                        stopVoiceDetection();
+                    }
+
+                    return; 
+                } 
+
+
+                if (result.response.choices &amp;&amp; result.response.choices.length &gt; 0 &amp;&amp; result.response.choices[0].message.function_call) {
+                    
+                    __gptFunctionCall = result.response.choices[0].message.function_call.name;
+                    __gptFunctionObject = result.response.choices[0].message.function_call;
+                    
+                    return;
+                }
+
+                __streamRequest = result.next;
+    
+                if (!result.response.choices || result.response.choices.length == 0) {
+                    return; 
+                } 
+    
+                var message = result.response.choices[0].message; 
+    
+                if (typeof message.content === 'undefined') { 
+                    message.content = null; 
+                } 
+                
+                if (!!message.content) { 
+                    __gptOutput = message.content; 
+                    __gptInput = ""; 
+                    __recognize = false; 
+                    __speak = true;
+
+                    if (__gptOutput.indexOf("```") &gt;= 0 ||
+                        __gptOutput.indexOf("`function") &gt;= 0 ||
+                        __gptOutput.indexOf("`typescript") &gt;= 0 ||
+                        (__gptOutput.indexOf("{") &gt;= 0 &amp;&amp; __gptOutput.indexOf("\"")) ||
+                        (__gptOutput.indexOf("{") &gt;= 0 &amp;&amp; __gptOutput.indexOf("'")) ||
+                        __gptOutput.indexOf("Calling function") &gt;= 0) {
+                            if (__logPrompt) { log_warn("GPT code output instead of function call. Output skipped. Content: " + __gptOutput); }
+                            __gptOutput = ""; /* output contains code */
+                    }
+                }
+            } else {
+                __requestCounter++;  
+                __gptOutput = __gptDialog_getRepeatMessage(); // when failure, we ask client to repeat to have some time
+            } 
+        } 
+    ); 
+}
+
+if (typeof Task !== "undefined") {
+
+    if (__gptCurrentWaitDelay == null) {
+        __gptCurrentWaitDelay = __gptShortWaitDelay;
+    } else {
+        __gptCurrentWaitDelay = __gptLongWaitDelay;
+    }
+
+    if (__streamRequest) {
+        return Task.timeout(__gptCurrentWaitDelay, __streamRequest, "timeout").then(result =&gt; {
+            if (result !== "timeout") __resultArrived = true;
+        });
+    } else {
+        return;
+    }
+    
+}
+
+if (typeof __streamWaitAttempts === 'number') {
+    // wait for reply
+    __streamWaitAttempts -= 1;
+    if (__streamWaitAttempts &lt; 0) {
+        // wait anoter 14*200 ms for response
+        __streamWaitAttempts = 14;
+    }
+    // response should come
+    return delay(200);
+} else {
+    return __streamRequest;
+}</Script>
+    </Node>
+    <Node Id="65" Type="script" NextId="77">
+      <Script>__repCounter++; 
+</Script>
+    </Node>
+    <Node Id="240" Type="setvar" NextId="346" VariableName="__repCounter" Value="{0}" />
+    <Node Id="245" Type="say" NextId="1224" WaitForPrevious="true" Cache="true">
+      <Text Global:RawText="false">{__gptDialog_getRepeatMessage()}</Text>
+    </Node>
+    <Node Id="275" Type="label" OnEnter="__streamWaitCounter = 0;" NextId="272" Title="ERROR COUNTER" />
+    <Node Id="298" Type="label" OnEnter="__gptLogCounter = 0;" NextId="709" Title="LLM start" />
+    <Node Id="344" Type="say" OnEnter="__gptDialog_addNodeToIgnoreList(context.currentNode.id);" NextId="298" ContinueAfter="250" WaitForPrevious="true" Cache="true">
+      <Text Global:RawText="false">{__gptDialog_getConfirmationMessage()}</Text>
+    </Node>
+    <Node Id="973" Type="case" FallbackId="866">
+      <When Eval="!!__message" NextId="557" />
+    </Node>
+    <Node Id="825" Type="case" FallbackId="973">
+      <When Eval="(__dialogControlOnEntry == 'default' || __dialogControlOnEntry == &quot;botFirst&quot;) &amp;&amp; __conversationType == 'chatbot' &amp;&amp; __gptLastDialogMessage == 'action' &amp;&amp; __gptHTMLorMDused == true" NextId="938" />
+      <When Eval="__dialogControlOnEntry == &quot;userFirst&quot;" NextId="875" />
+      <When Eval="__dialogControlOnEntry == &quot;botFirst&quot; &amp;&amp; __gptRepeatedCall" NextId="866" />
+      <When Eval="__dialogControlOnEntry == &quot;botFirst&quot;" NextId="973" />
+      <When Eval="__gptRepeatedCall &amp;&amp; __gptLastDialogMessage == &quot;bot&quot;" NextId="875" />
+      <When Eval="__gptRepeatedCall" NextId="866" />
+    </Node>
+    <Node Id="723" Type="case" FallbackId="722">
+      <When Eval="__gptNoInputLoopsLabel == ''" NextId="704" />
+    </Node>
+    <Node Id="44" Type="recognize" OnEnter="context.returnTo = context.currentNode.id; __gptInput = ''; __gptLoopCounter++; if (__gptDialogVADEnabled) { stopVoiceDetection(); }" Timeout="{__rDfMxT}" MinTimeout="{__rDfMnT}" NextId="511" NoInputId="699" SpeechRecognition="default" VariableName="__gptInput" ReactionType="Custom" SpeechType="Default" Middleware="ResolveNegatives;Prediction;DictateReactionTime" ResponseAudio="false" ResponseSilence="false" ResponseAffirmation="false" AcceptAnyResponse="true" UseContext="false" IncludeInSpeakflow="true" RepeatAfterGlobalUpload="true" ReactionIntervalCustom="{__silenceWindow}">
+      <Hints>
+        <Phrase>{__gptBoostPhrases}</Phrase>
+      </Hints>
+    </Node>
+    <Node Id="699" Type="case" OnEnter="if (typeof __gptNoInputCounter !== 'undefined') { __gptNoInputCounter++; } else { __gptNoInputCounter = 1; }" FallbackId="580">
+      <When Eval="__gptNoInputCounter &gt;= __gptNoInputLoops" NextId="723" />
+    </Node>
+    <Node Id="85" Type="case" FallbackId="240">
+      <When Eval="wordCount(__gptInput) &gt; 8" NextId="240" />
+      <When Eval="__gptInput == null || context.transcription == null" NextId="65" />
+      <When Eval="context.transcription.confidence &lt;= 0.5 &amp;&amp; wordCount(__gptInput) &lt;= 2" NextId="65" />
+      <When Eval="context.transcription.confidence &lt;= 0.85 &amp;&amp; wordCount(__gptInput) &lt;= 1" NextId="65" />
+      <When Eval="context.transcription.confidence &lt;= 0.5" NextId="65" />
+    </Node>
+    <Node Id="1098" Type="case" FallbackId="842">
+      <When Eval="__gptDetectedIntent == &quot;user_answered_entity&quot; &amp;&amp; __conversationType == 'voicebot' &amp;&amp; __typingSound == true &amp;&amp; __typingSoundPlayed == false" NextId="1119" />
+    </Node>
+    <Node Id="272" Type="case" OnEnter="if (typeof _counter_272 !== 'undefined') { _counter_272++; } else { _counter_272 = 1; }" FallbackId="1227">
+      <When Eval="_counter_272 &gt;= 2" NextId="469" />
+    </Node>
+    <Node Id="982" Type="case" OnEnter="if (typeof __streamWaitCounter !== 'undefined') { __streamWaitCounter++; } else { __streamWaitCounter = 1; }" FallbackId="412">
+      <When Eval="__streamWaitCounter &gt;= 2" NextId="275" />
+    </Node>
+    <Node Id="406" Type="case" FallbackId="817">
+      <When Eval="!__resultArrived &amp;&amp; typeof Task !== &quot;undefined&quot; &amp;&amp; (__gptCurrentWaitDelay == __gptShortWaitDelay) &amp;&amp; __gptBotSpoke() &amp;&amp; __conversationType != 'chatbot'" NextId="1097" />
+      <When Eval="!__resultArrived &amp;&amp; typeof Task !== &quot;undefined&quot; &amp;&amp; (__gptCurrentWaitDelay == __gptLongWaitDelay) &amp;&amp; __gptBotSpoke() &amp;&amp; __conversationType != 'chatbot'" NextId="982" />
+      <When Eval="__gptFunctionCall != null" NextId="987" />
+      <When Eval="__streamWaitAttempts == 7 &amp;&amp; __gpt_waitShort.length &gt; 0 &amp;&amp; __conversationType != 'chatbot'  &amp;&amp; __gptBotSpoke()" NextId="1097" />
+      <When Eval="__streamWaitAttempts === 0" NextId="982" />
+      <When Eval="__streamWaitAttempts === null" NextId="102" />
+    </Node>
+    <Node Id="102" Type="case" FallbackId="987">
+      <When Eval="__requestCounter &gt; 2" NextId="275" />
+      <When Eval="__gptMaxLoops != null &amp;&amp; __gptLoopCounter &gt;= __gptMaxLoops" NextId="671" />
+    </Node>
+    <Node Id="809" Type="case" FallbackId="62">
+      <When Eval="__gptPreventStreaming" NextId="308" />
+    </Node>
+    <Node Id="1128" Type="case" OnEnter="if (typeof __gptUnfinishedInputCounter !== 'undefined') { __gptUnfinishedInputCounter++; } else { __gptUnfinishedInputCounter = 1; }" FallbackId="1044">
+      <When Eval="__gptUnfinishedInputCounter &gt;= 2" NextId="736" />
+    </Node>
+    <Node Id="1047" Type="case" FallbackId="736">
+      <When Eval="__gptDetectedIntent == &quot;user_answered_entity&quot; &amp;&amp; __conversationType == 'voicebot'  &amp;&amp; __typingSound == true &amp;&amp; __typingSoundPlayed == false" NextId="1116" />
+      <When Eval="__gptDetectedIntent == &quot;unfinished_input&quot; &amp;&amp; __conversationType == 'voicebot'" NextId="1128" />
+    </Node>
+    <Node Id="736" Type="case" FallbackId="98">
+      <When Eval="__gptIntentClassifierTimeout == true &amp;&amp; __conversationType == 'chatbot'" NextId="1028" />
+      <When Eval="__gptIntentClassifierTimeout == true" NextId="1026" />
+      <When Eval="__gptFunctionCall != null" NextId="474" />
+      <When Eval="__gptOutput == &quot;&quot;" NextId="1233" />
+    </Node>
+    <Node Id="98" Type="case" OnEnter="__resultArrived = false;" FallbackId="1239">
+      <When Eval="__speak &amp;&amp; __recognize" NextId="237" />
+      <When Eval="__speak" NextId="429" />
+      <When Eval="__recognize" NextId="1162" />
+    </Node>
+    <Node Id="1145" Type="recognize" Timeout="200" MinTimeout="100" FallbackId="1263" SpeechRecognition="default" SpeechType="None" Input="__gptOutput" RenderOptions="Text" ResponseAudio="false" ResponseSilence="false" ResponseAffirmation="false" AcceptAnyResponse="true" UseContext="false" IncludeInSpeakflow="false" RepeatAfterGlobalUpload="true">
+      <ReactionGroup NextId="1231" Lemma="false" Synonyms="false" GlobalIntent="false" Priority="7000" Weight="1" MaxWords="10" Description="" IntentId="1147">
+        <Title>bot_said_wait</Title>
+        <Phrase Context="true">one moment</Phrase>
+        <Phrase Context="true">hold on</Phrase>
+        <Phrase Context="true">one moment</Phrase>
+        <Phrase Context="true">me a sec</Phrase>
+        <Phrase Context="true">me a second</Phrase>
+        <Phrase Context="true">wait</Phrase>
+        <Phrase Context="true">please wait</Phrase>
+        <Phrase Context="true">a moment</Phrase>
+        <Phrase Context="true">moment please</Phrase>
+        <Phrase Context="true">one second</Phrase>
+        <Phrase Context="true">few seconds</Phrase>
+        <Phrase Context="true">be right with you</Phrase>
+        <Phrase Context="true">a sec</Phrase>
+        <Phrase Context="true">stand by</Phrase>
+        <Phrase Context="true">bear with me</Phrase>
+        <Phrase Context="true">stay on the line</Phrase>
+      </ReactionGroup>
+      <ReactionGroup NextId="1263" Lemma="false" Synonyms="false" GlobalIntent="false" Priority="6000" Weight="1.5" Description="" IntentId="1160">
+        <Title>question</Title>
+        <Phrase Context="true">Do you</Phrase>
+      </ReactionGroup>
+    </Node>
+    <Node Id="1162" Type="case" FallbackId="1145">
+      <When Eval="__gptOutput.indexOf(&quot;?&quot;) &gt;= 0" NextId="1229" />
+    </Node>
+    <Node Id="369" Type="transient" NextId="" Title="output" Kind="Output" />
+    <Node Id="371" Type="label" NextId="474" Title="function call" />
+    <Node Id="412" Type="say" OnEnter="__gptDialog_addNodeToIgnoreList(context.currentNode.id);" NextId="422" WaitForPrevious="true" Cache="true">
+      <Text Global:RawText="false">{__gptDialog_getWaitMessage()}</Text>
+    </Node>
+    <Node Id="422" Type="pause" NextId="62" Value="2000" />
+    <Node Id="237" Type="say" NextId="1162" WaitForPrevious="true" Cache="true">
+      <Text Global:RawText="true">{__gptDialog_preprocessDialogTTS(__gptOutput)}</Text>
+    </Node>
+    <Node Id="429" Type="say" NextId="1237" ContinueAfter="1" WaitForPrevious="true" Cache="true">
+      <Text Global:RawText="true">{__gptDialog_preprocessDialogTTS(__gptOutput)}</Text>
+    </Node>
+    <Node Id="464" Type="setvar" NextId="716" VariableName="__componentDynamicOutputValue" Value="{__outputRelation}" />
+    <Node Id="469" Type="setvar" NextId="1266" VariableName="__gptFunctionCall" Value="{'error'}" />
+    <Node Id="474" Type="script" NextId="486">
+      <Script>/* maybe not needed to stop in now but this will prevent some strange-behavior */
+if (__gptDialogVADEnabled) {
+    //log_debug('VAD disabled');
+    stopVoiceDetection();
+}
+
+__validOutput = false;
+ 
+__gptFunctionCallArgs = null; 
+try { 
+    if (__gptFunctionObject.arguments != null) {
+        __gptFunctionCallArgs = JSON.parse(__gptFunctionObject.arguments);
+    }
+    __validOutput = true;
+} catch (e) { 
+    log_warn('GPT function JSON parse error: '+e.toString()); 
+} 
+ 
+ 
+// find out if the function has an entity 
+if (__gptFunctionCallArgs) { 
+    for (var i = 0; i &lt; __componentOutputRelationConfig.length; i++) { 
+        if (__componentOutputRelationConfig[i].Name) {
+            if (transformFunctionName(__componentOutputRelationConfig[i].Name) == transformFunctionName(__gptFunctionCall)) {
+                    
+                /*log_debug("Not I will setup flow variables!");
+                log_debug(JSON.stringify(__gptFunctionCallArgs));*/
+
+                try {
+                    /* TODO: clear all function for given action */
+                    for (var k in __gptFunctionCallArgs) {
+                        global[k] = __gptFunctionCallArgs[k];
+                    }
+                } catch (e) {
+                    log_warn("Error during setting up arguments: "+e);
+                    __gptFunctionCall = null;
+                }
+                
+            }
+        } 
+    } 
+} 
+
+
+if (__intentClassifierMode == true) {
+    if (transformFunctionName(__gptFunctionCall) == transformFunctionName("submit_intent")) {
+
+        // inject intent name
+        if (__gptFunctionCallArgs["intent_id"]) {
+
+            //__gptFunctionCall = __gptFunctionCallArgs["intent_id"];
+            __gptFunctionCall = null;
+            for (var i = 0; i &lt; __componentOutputRelationConfig.length; i++) {
+
+                if (!__componentOutputRelationConfig[i].Name) continue; /* skip no_input because its not an intent */
+
+                if (transformFunctionName(__gptFunctionCallArgs["intent_id"]) == transformFunctionName(__componentOutputRelationConfig[i].Name)) {
+                    __gptFunctionCall = __componentOutputRelationConfig[i].Name;
+                    break;
+                }
+            }
+
+            if (__gptFunctionCall == null) {
+                log_warn("Intent mode error! Intent ID does not match output relation name in Dialog Node. Detected intent: " + JSON.stringify(__gptFunctionCallArgs));
+            } else {
+                if (__logPrompt) {
+                    log_debug("Intent successfully injected: " + __gptFunctionCall);
+                }
+            }
+        } else {
+            log_warn("Intent mode error! Arguments does not contains intent Id: " + JSON.stringify(__gptFunctionCallArgs));
+            __gptFunctionCall = null;
+        }
+    }
+}</Script>
+    </Node>
+    <Node Id="511" Type="script" NextId="121">
+      <Script>__streamRequest = null; 
+__resultArrived = false; 
+//__repCounter = 0; 
+__speak = false; 
+__recognize = false; 
+__sayInstruction = []; 
+__gptFunctionCall = null; 
+__gptFunctionObject = null; 
+__gptFunctionCallArgs = null; 
+__rDfMnT = __recognitionNodeDefaultMinTimeout;
+__rDfMxT = __recognitionNodeDefaultMaxTimeout;
+__gptNoInputCounter = 0;
+__confirmIntentMode = 0;
+__streamWaitCounter = 0;
+
+
+// postprocess __gptInput
+if (__gptInput) {
+    if (typeof postprocessDialogSTT === 'function') {
+        __gptInput = postprocessDialogSTT(__gptInput);
+    }
+}</Script>
+    </Node>
+    <Node Id="557" Type="script" NextId="121">
+      <Script>if (__logPrompt) log_debug('DialogNode entry: Instruct the bot to say initial message'); 
+ 
+__sayInstruction = __gptDialog_getSystemMessage(__message);
+
+// when bot is saying initial message we will SKIP the VAD =&gt; this message is always important!
+__gptSkipVAD = true;</Script>
+    </Node>
+    <Node Id="564" Type="script" NextId="566">
+      <Script>__validOutput = false;
+__outputRelation = null;
+__confirmIntentMode = 0;
+__customConfirmationMessage = '';
+
+for (var i = 0; i &lt; __componentOutputRelationConfig.length; i++) { 
+ 
+    if (__componentOutputRelationConfig[i].SubType == 'dynamicOutput' || 
+        __componentOutputRelationConfig[i].SubType == 'entityExtractionOutput') { 
+ 
+        //log_debug(__componentOutputRelationConfig[i].Name);
+
+        if (__componentOutputRelationConfig[i].ApplyWhen == true) {
+            //log_debug("true, gpt func is: " + __gptFunctionCall);
+ 
+            if (transformFunctionName(__componentOutputRelationConfig[i].Name) == transformFunctionName(__gptFunctionCall)) {
+
+                //log_debug("Name matches function!");
+
+                __validOutput = true; 
+                __outputRelation = __componentOutputRelationConfig[i].label;
+
+                __gptOutputConfirmation[__componentOutputRelationConfig[i].Name]++; // output counter - used for explicit confirmation
+                if (__gptOutputConfirmation[__componentOutputRelationConfig[i].Name] == 1) {
+
+                    if (__componentOutputRelationConfig[i].Confirmation == 'Explicit') {
+                        __confirmIntentMode = 1;
+                    }
+
+                    if (__componentOutputRelationConfig[i].Confirmation == 'Implicit') {
+                        __confirmIntentMode = 2;
+                    }
+
+                    if (__componentOutputRelationConfig[i].Confirmation == 'Auto') {
+                        // if bad confidence and less than 3 words, lets do explicit confirmation
+                        if (context.transcription.confidence &lt;= 0.5 &amp;&amp; wordCount(__gptInput) &lt; 3) {
+                            __confirmIntentMode = 1;
+                        }
+                    }
+
+
+                    if (__confirmIntentMode &gt; 0 &amp;&amp; __componentOutputRelationConfig[i].ConfirmationMessage) {
+                        __customConfirmationMessage = __componentOutputRelationConfig[i].ConfirmationMessage;
+                    }
+
+                }
+
+                break; 
+            } 
+        } 
+    } 
+} 
+
+if (__logPrompt) {
+    log_debug("Confirm intent mode: "+__confirmIntentMode);
+}
+
+
+if (__confirmIntentMode == 0 &amp;&amp; __validOutput == true) {
+
+    // add function call to history
+    __gptFunctionCallHistory.push({
+        "componentId": __gptComponentId,
+        "name": __outputRelation,
+        "result": "", // could be empty OR better set by "Set result" component
+        "speakFlowIndexFunctionCall": context.speakFlow.size - 1,
+        "speakFlowIndexResultSet": context.speakFlow.size - 1,
+        "dateTime": new Date(),
+        "arguments": __gptFunctionObject.arguments
+    });
+}
+</Script>
+    </Node>
+    <Node Id="577" Type="script" NextId="1264">
+      <Script>log_error('Invalid output relation '+__gptFunctionCall+', object is '+JSON.stringify(__gptFunctionObject)); 
+ 
+__sayInstruction = __gptDialog_getSystemMessage('An incorrect GPT function was called!'); 
+__gptFunctionCall = null; 
+__gptFunctionObject = null; 
+__gptFunctionCallArgs = null; 
+</Script>
+    </Node>
+    <Node Id="580" Type="script" NextId="121">
+      <Script>__sayInstruction = __gptDialog_getSystemMessage("The user didn't say anything or you didn't hear him. Ask for a response or a repeat. Be as brief as possible. Don't repeat the same sentence, say it slightly differently."); 
+__gptFunctionCall = null; 
+__gptFunctionObject = null; 
+__gptFunctionCallArgs = null; 
+__rDfMnT = __recognitionNodeDefaultMinTimeout;
+__rDfMxT = __recognitionNodeDefaultMaxTimeout;</Script>
+    </Node>
+    <Node Id="581" Type="label" NextId="121" Title="bots activity start" />
+    <Node Id="588" Type="say" NextId="496" WaitForPrevious="false" Cache="true">
+      <Text Global:RawText="false">debug: {JSON.stringify(__gptFunctionCallArgs)}</Text>
+    </Node>
+    <Node Id="594" Type="say" NextId="1247" WaitForPrevious="false" Cache="true">
+      <Text Global:RawText="false">Debug: speech in progress</Text>
+    </Node>
+    <Node Id="597" Type="say" NextId="1251" WaitForPrevious="true" SelectionMode="Permanent" Cache="true">
+      <Text Global:RawText="false">{__gptDialog_getWaitConfirmationMessage()}</Text>
+    </Node>
+    <Node Id="671" Type="script" NextId="1258">
+      <Script>__outputRelation = __gptMaxLoopsLabel; /* it could be 'max loops' but this will work if somebody will change the label */</Script>
+    </Node>
+    <Node Id="677" Type="script" NextId="770">
+      <Script>if (__confirmIntentMode == 1) {
+    //__sayInstruction = __gptDialog_getSystemMessage("Make sure you understand the user's last intent."); 
+} else {
+    //__confirmIntentMode == 2
+    //__sayInstruction = __gptDialog_getSystemMessage("Respond by implicitly confirming what the user said. The response must not be a question but only a short sentence confirming what the user intended. For example, when user said 'My name is John', you should say 'Your name is John' etc."); 
+
+    __rDfMnT = 2000; // just quick time for reaction - user will be quiet OR interrupt the bot
+    __rDfMxT = __recognitionNodeDefaultMaxTimeout; // recognition node max timeout will be same
+}
+
+__gptFunctionCall = null; 
+__gptFunctionObject = null; 
+__gptFunctionCallArgs = null; 
+__streamRequest = null;
+__resultArrived = false; 
+</Script>
+    </Node>
+    <Node Id="704" Type="script" NextId="706">
+      <Script>log_warn('No input from user! Conversation terminated!');</Script>
+    </Node>
+    <Node Id="706" Type="hung" />
+    <Node Id="709" Type="script" NextId="731">
+      <Script>if (__gptDialogVADEnabled &amp;&amp; __gptSkipVAD == false) { 
+    if (__logPrompt) { 
+        log_debug("Barge-in enabled"); 
+    }
+
+    if (typeof __gpt_VAD_sensitivity !== "undefined" &amp;&amp; __gpt_VAD_sensitivity != null &amp;&amp; __gpt_VAD_sensitivity &gt; 0) {
+        startVoiceDetection(__gpt_VAD_sensitivity, "__gptDialog_onVoiceDetected"); 
+    } else {
+        startVoiceDetection(500, "__gptDialog_onVoiceDetected"); 
+    }
+} 
+
+// VAD skipped only once (when Intro message is spoken by bot)
+__gptSkipVAD = false;</Script>
+    </Node>
+    <Node Id="716" Type="script" NextId="369">
+      <Script>if (__gptDialogVADEnabled) { 
+    //log_debug('VAD disabled'); 
+    stopVoiceDetection(); 
+}
+
+if (typeof whenAudioFinished !== 'undefined') {
+    return whenAudioFinished().withTimeout(0);
+}
+</Script>
+    </Node>
+    <Node Id="722" Type="script" NextId="1255">
+      <Script>__outputRelation = __gptNoInputLoopsLabel; /* it could be 'max loops' but this will work if somebody will change the label */</Script>
+    </Node>
+    <Node Id="731" Type="script" NextId="806">
+      <Script>__gptIntentClassifier = null; 
+
+// skip when last action was Set result (bot need to say that!)
+if (__intentClassifierMode == false &amp;&amp; __gptLastDialogMessage != 'action') {
+    
+    if (__confirmIntentMode == 0 &amp;&amp; (__sayInstruction == null || __sayInstruction.length == 0)) { 
+    
+        var msgHistory = __gptDialog_getSimplifiedHistory(6) //pass last 6 rows from history to save some capacity; 
+    
+        var intentCount = 0; 
+    
+        var intents = "[\n"; 
+        for (var i = 0; i &lt; __componentOutputRelationConfig.length; i++) { 
+            if (__componentOutputRelationConfig[i].Name 
+                &amp;&amp; __componentOutputRelationConfig[i].SubType == 'dynamicOutput' 
+                &amp;&amp; __componentOutputRelationConfig[i].ApplyWhen == true) { 
+                    intentCount++; 
+                    intents += "  {\n    \"id\": \"" + __componentOutputRelationConfig[i].Name + "\",\n    \"description\": \"" + __componentOutputRelationConfig[i].Description.replace(/\n/g, " ").replace(/"/g, "'") + "\"\n  },\n";
+            }
+        }
+    
+   
+        intents += "  {\n    \"id\": \"user_answered_entity\",\n    \"description\": \"The user said provided an entity value that was asked by the assistant (like exact number, name, etc...).\"\n  },\n  {\n    \"id\": \"unfinished_input\",\n    \"description\": \"The user asked the assistant to wait a moment.\"\n  }\n]";
+
+        var classifierSystemMessage = `Now you are an intent classifier. Based on the dialog history provided below, classify the user's last intent into one of the categories listed or return NULL if not classifiable. 
+    
+DIALOG HISTORY: 
+`+ msgHistory+` 
+
+LIST OF INTENTS AND THEIR DESCRIPTIONS: 
+`+ intents + ` 
+
+Include only the category ID in the response, or NULL if the user's intent cannot be assigned to any of them!
+`; 
+    
+               
+        var intentLLMModel = "gpt-4.1-nano";
+
+        switch (__gptProvider) {
+            case "Gemini": { intentLLMModel = "gemini-2.5-flash-lite"; break; }
+            case "Claude": { intentLLMModel = "claude-4-5-sonnet-latest"; break; }
+        }
+
+        if (__gptModel.indexOf("gpt-5") &gt;= 0) {
+            // gpt 5 is present, lets use nano model instead of 4.1-nano
+            intentLLMModel = "gpt-5-nano";
+        }
+
+        intentClassifierRequest = { 
+            "model": intentLLMModel,
+            "messages": [ 
+                { 
+                    "role": "system", 
+                    "content": classifierSystemMessage 
+                } 
+            ], 
+            "top_p": 1, 
+            "service_host": __gptServiceHost, 
+            "frequency_penalty": 0, 
+            "presence_penalty": 0, 
+            "share_connection": true 
+        }
+        if (__gptModel.indexOf("gpt-5") &gt;= 0) {
+            intentClassifierRequest["max_completion_tokens"] = 10;
+        } else {
+            intentClassifierRequest["max_tokens"] = 10;
+            intentClassifierRequest["temperature"] = 0;
+        }
+
+        if (__logPrompt) { 
+            log_debug('Intent classifier request: ' + JSON.stringify(intentClassifierRequest)); 
+        } 
+
+        __gptIntentClassifier = gptRequest("chat/completions", intentClassifierRequest);
+    }
+}
+
+// need to clear otherwise intent classifier will be skipped all the time
+__gptLastDialogMessage = null;</Script>
+    </Node>
+    <Node Id="734" Type="script" NextId="1047">
+      <Script>__gptIntentClassifierTimeout = false;
+__gptDetectedIntent = null;
+
+var __regexDigits = /\d.*\d/;
+if (__gptInput &amp;&amp; __regexDigits.test(__gptInput)) {
+    __gptDetectedIntent = "user_answered_entity"; // more than one digit is present, always play keyboard sound
+}
+
+if (__gptIntentClassifier == null) return; 
+
+function handleIntentClassifierResponse(result) {
+
+    __gptRequest2End = new Date();
+    __gptRequest2Duration = __gptRequest2End - __gptRequest2Start;
+
+    if (__gptRequest2Duration &gt; 250) { // normal behavior is 1ms - because it must be evaluted much earlier!
+        if (__logPrompt) {
+            log_warn("Intent classification delay: +" + __gptRequest2Duration + "ms!");
+        }
+    }
+
+    __gptIntentClassifier = null; /* prevent repeated evaluation during fragmented speech */
+    if (!result || !result.response || !Array.isArray(result.response.choices) || result.response.choices.length == 0) {
+        log_error('Intent classification failed: ' + JSON.stringify(result));
+    } else {
+        if (result.response &amp;&amp;
+            result.response.choices &amp;&amp;
+            result.response.choices.length &gt; 0 &amp;&amp;
+            result.response.choices[0].message &amp;&amp;
+            result.response.choices[0].message.content) {
+            var gptDetectedIntent = result.response.choices[0].message.content;
+            __gptDetectedIntent = transformFunctionName(gptDetectedIntent);
+
+            if (__logPrompt) {
+                log_debug('Classifier output: ' + gptDetectedIntent);
+                log_debug('Detected function: ' + __gptFunctionCall);
+            }
+            /* check if this function already exists */
+
+            for (var i = 0; i &lt; __componentOutputRelationConfig.length; i++) {
+                if (__componentOutputRelationConfig[i].Name) {
+                    if (transformFunctionName(__componentOutputRelationConfig[i].Name) == transformFunctionName(gptDetectedIntent)) {
+                        /* this condition will solve situation, where LLM itself correcly detected the correct function */
+                        if (__gptFunctionCall != __componentOutputRelationConfig[i].Name) {
+                            __gptFunctionCall = __componentOutputRelationConfig[i].Name;
+                            __gptFunctionObject = {
+                                "name": __gptFunctionCall,
+                                "arguments": "{}" /*JSON.stringify(__functionArgsGuess)*/
+                            };
+                            // function call injected successfully 
+                            if (__logPrompt) {
+                                log_debug('Function injection successfull!');
+                                log_debug('Detected function: ' + __gptFunctionCall);
+                            }
+                        } else {
+                            if (__logPrompt) {
+                                log_debug('Both classifiers guess is correct!');
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    } 
+} 
+
+
+__gptRequest2Start = new Date();
+
+
+if (typeof Task !== "undefined") {
+
+    return Task.timeout(500, __gptIntentClassifier, "timeout").then(result =&gt; {
+        if (result == "timeout") {
+            // timeout!
+            if (__logPrompt) {
+                log_warn("Intent classification timeout!");
+            }
+            __gptIntentClassifierTimeout = true;
+        } else {
+            handleIntentClassifierResponse(result);
+        }
+    });
+
+} else {
+    // backward compatibility
+    return __gptIntentClassifier.then(handleIntentClassifierResponse);
+}</Script>
+    </Node>
+    <Node Id="491" Type="say" NextId="1245" WaitForPrevious="false" SelectionMode="Permanent" Cache="true">
+      <Text Global:RawText="false">{__gptDialog_getWaitConfirmationMessage()}</Text>
+    </Node>
+    <Node Id="776" Type="say" NextId="1249" WaitForPrevious="false" Cache="true">
+      <Text Global:RawText="false">{__customConfirmationMessage}</Text>
+    </Node>
+    <Node Id="806" Type="script" NextId="809">
+      <Script>__gptRequestStart = new Date();
+__streamWaitAttempts = null;
+__streamRequest = null;
+__gptCurrentWaitDelay = null;
+__requestCounter = 0;
+__typingSoundPlayed = false;
+
+__gptCurrentMessages = ([ 
+    { 
+        "role": "system", 
+        "content": __gptDialog_description() 
+    } 
+]).concat(__exampleMessages, __gptDialog_getPrevMessages(), __sayInstruction); 
+__gptCurrentModel = __gptModel; // main model for dialog  like gpt4o 
+
+
+if (__intentClassifierMode == true) {
+    // append instructions when we are in intent classifier mode
+    __gptCurrentMessages[0].content += "\n\n" + __gptIntentClassifierChoices;
+}
+
+ 
+if (__confirmIntentMode == 1) { 
+    // generate confirmation 
+ 
+    __gptCurrentModel = "gpt-4o-mini"; // TODO: read from model for evaluation 
+    __gptCurrentMessages = [ 
+        { 
+            "role": "system", 
+            "content": `Your task is to generate a confirmation sentence based on the context of the conversation. 
+ 
+--- 
+Examples: 
+EXAMPLE DIALOG 1 INPUT: 
+Assistant: Hello, how can I help you? 
+User: Hi please transfer my call to the agent. 
+Example output: Would you like to transfer to an agent? 
+ 
+EXAMPLE DIALOG 2 INPUT: 
+Assistant: What is your name? 
+User: My name is John. 
+Example output: Do I understand your name is John? 
+ 
+--- 
+Now the real conversation: 
+ 
+INPUT: 
+`+ __gptDialog_getSimplifiedHistory() + ` 
+ 
+--- 
+Now generate a confirmation statement on a single line, don't include role tag. 
+Write the output sentence (question) directly without any additional text. 
+--- 
+OUTPUT:` 
+        } 
+    ] 
+}</Script>
+    </Node>
+    <Node Id="308" Type="script" NextId="734">
+      <Script>request = { 
+    "model": __gptCurrentModel, 
+    "messages": __gptCurrentMessages,
+    /*"temperature": parseFloat(__temperature.toString()), */
+    "top_p": 1, 
+    "service_host": __gptServiceHost, 
+    "frequency_penalty": 0,
+    "seed": __gptSeed,
+    /*"max_tokens": 500,*/
+    "presence_penalty": 0 
+}
+if (__gptModel.indexOf("gpt-5") &gt;= 0) {
+    request["max_completion_tokens"] = __gptMaxTokens;
+} else {
+    request["max_tokens"] = __gptMaxTokens;
+    request["temperature"] = parseFloat(__temperature.toString());
+}
+
+
+if (__gptIntents &amp;&amp; __confirmIntentMode == 0 &amp;&amp; (__sayInstruction == null || __sayInstruction.length == 0)) {
+    request.functions = __gptFunctionsDefinition;
+}
+
+__confirmIntentMode = 0; //clear FLAG for confirmation request
+
+ 
+__gptFunctionCall = null;
+
+__lastGptRequest = request; 
+ 
+if (JSON.parse(__logPrompt)) { 
+    log_debug("GPT request: "+JSON.stringify(request.messages)); 
+} 
+
+__speak = true;
+__recognize = true; 
+ 
+return gptRequest("chat/completions", request).then( 
+    function (result) { 
+        if (JSON.parse(__logPrompt)) { 
+            log_debug("GPT response: " + JSON.stringify(result)); 
+        } 
+ 
+        if (!result || !result.response || !Array.isArray(result.response.choices) || result.response.choices.length == 0) { 
+            log_error(JSON.stringify(result)); 
+             
+            __gptOutput = "ERROR"; 
+        } else { 
+
+            if (result.response.choices &amp;&amp; result.response.choices.length &gt; 0 &amp;&amp; result.response.choices[0].message.function_call) {
+
+                __gptFunctionCall = result.response.choices[0].message.function_call.name; //.replace("intent_", "");
+                __gptFunctionObject = result.response.choices[0].message.function_call;
+            } else {
+                __gptOutput = result.response.choices[0].message.content; 
+            }
+        }
+    }
+);</Script>
+    </Node>
+    <Node Id="817" Type="pause" NextId="62" Value="50" />
+    <Node Id="845" Type="pause" NextId="62" Value="750" />
+    <Node Id="866" Type="label" OnEnter="if (__logPrompt) log_debug('DialogNode entry: Continue dialog based on objective/set result');" NextId="511" Title="continue dialog based on objective/set result" />
+    <Node Id="875" Type="label" OnEnter="if (__logPrompt) log_debug('DialogNode entry: Start by speech recognition');" NextId="44" Title="start by speech recognition" />
+    <Node Id="1222" Type="say" NextId="44" WaitForPrevious="false" Cache="true">
+      <Text Global:RawText="false">{__gptDialog_getbargeInMessage()}</Text>
+    </Node>
+    <Node Id="937" Type="say" NextId="44">
+      <Text Global:RawText="true">{__gptLastActionResult}</Text>
+    </Node>
+    <Node Id="938" Type="script" NextId="937">
+      <Script>__gptMarkdownToHTML = function (markdown) { 
+    // Replace shortened URLs with full URLs first  
+    //markdown = replaceShortenedUrls(markdown);  
+ 
+    // Replace suggestion links   
+    markdown = markdown.replace(/\[(.*?)\]\(#(.*?)\)/g, '&lt;a href="#" class="suggestion-link" data-suggestion="$1"&gt;$1&lt;/a&gt;'); 
+ 
+    // Replace image markdown links  
+    markdown = markdown.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function (match, alt, url) { 
+        return '&lt;img src="' + url + '" alt="' + alt + '"&gt;'; 
+    }); 
+ 
+    // Replace regular markdown links, ignoring those that start with #  
+    markdown = markdown.replace(/\[([^\]]+)\]\((?!#)([^)]+)\)/g, function (match, text, url) { 
+        // Ensure it's not an image link by checking the absence of '!'  
+        if (!match.startsWith('!')) { 
+            return '&lt;a href="' + url + '"&gt;' + text + '&lt;/a&gt;'; 
+        } 
+        return match; // Return the match as is if it's an image link  
+    }); 
+ 
+    // Replace headings   
+    markdown = markdown.replace(/^# (.*)$/gm, '&lt;h1&gt;$1&lt;/h1&gt;'); 
+    markdown = markdown.replace(/^## (.*)$/gm, '&lt;h2&gt;$1&lt;/h2&gt;'); 
+    markdown = markdown.replace(/^### (.*)$/gm, '&lt;h3&gt;$1&lt;/h3&gt;'); 
+    markdown = markdown.replace(/^#### (.*)$/gm, '&lt;h4&gt;$1&lt;/h4&gt;'); 
+    markdown = markdown.replace(/^##### (.*)$/gm, '&lt;h5&gt;$1&lt;/h5&gt;'); 
+    markdown = markdown.replace(/^###### (.*)$/gm, '&lt;h6&gt;$1&lt;/h6&gt;'); 
+ 
+    // Replace bold   
+    markdown = markdown.replace(/\*\*(.*?)\*\*/g, '&lt;strong&gt;$1&lt;/strong&gt;'); 
+ 
+    // Replace italic   
+    markdown = markdown.replace(/\*(.*?)\*/g, '&lt;em&gt;$1&lt;/em&gt;'); 
+ 
+    // Replace block code syntax   
+    markdown = markdown.replace(/```([\s\S]+?)```/g, '&lt;pre class="chat-code-block"&gt;&lt;code&gt;$1&lt;/code&gt;&lt;/pre&gt;'); 
+ 
+    // Replace inline code   
+    markdown = markdown.replace(/`([^`]+)`/g, '&lt;code class="chat-inline-code"&gt;$1&lt;/code&gt;'); 
+ 
+    // Replace newlines that have two spaces before them with &lt;br&gt;  
+    markdown = markdown.replace(/\n\n/g, '&lt;br&gt;'); 
+ 
+    return markdown; 
+} 
+ 
+ 
+// convert last result (output from RAG) to HTML 
+__gptLastActionResult = __gptMarkdownToHTML(__gptLastActionResult); 
+</Script>
+    </Node>
+    <Node Id="987" Type="script" NextId="734">
+      <Script>__streamWaitCounter = 0;</Script>
+    </Node>
+    <Node Id="1026" Type="say" OnEnter="__gptDialog_addNodeToIgnoreList(context.currentNode.id);" NextId="1028" WaitForPrevious="true" SelectionMode="Permanent" Cache="true">
+      <Text Global:RawText="false">{__gptDialog_getWaitMessageShort()}</Text>
+    </Node>
+    <Node Id="1028" Type="pause" NextId="734" Value="1000" />
+    <Node Id="842" Type="say" OnEnter="__gptDialog_addNodeToIgnoreList(context.currentNode.id);" NextId="845" WaitForPrevious="true" SelectionMode="Permanent" Cache="true">
+      <Text Global:RawText="false">{__gptDialog_getWaitMessageShort()}</Text>
+    </Node>
+    <Node Id="1044" Type="script" NextId="1260">
+      <Script>if (__logPrompt) { 
+    log_debug('unfinished input/wait request'); 
+}</Script>
+    </Node>
+    <Node Id="1097" Type="script" NextId="1098">
+      <Script>__gptDetectedIntent = null; 
+ 
+var __regexDigits = /\d.*\d/; 
+if (__gptInput &amp;&amp; __regexDigits.test(__gptInput)) { 
+    __gptDetectedIntent = "user_answered_entity"; // more than one digit is present, always play keyboard sound 
+} 
+ 
+ 
+if (__gptIntentClassifier != null &amp;&amp; typeof Task !== "undefined") { 
+     
+    // wait for short while if there is output from intent classifier available 
+    return Task.timeout(100, __gptIntentClassifier, "timeout").then(result =&gt; { 
+        if (result != "timeout") { 
+            if (result.response &amp;&amp; 
+                result.response.choices &amp;&amp; 
+                result.response.choices.length &gt; 0 &amp;&amp; 
+                result.response.choices[0].message &amp;&amp; 
+                result.response.choices[0].message.content) { 
+                var gptDetectedIntent = result.response.choices[0].message.content; 
+                __gptDetectedIntent = transformFunctionName(gptDetectedIntent); 
+            } 
+        } 
+    }); 
+}</Script>
+    </Node>
+    <Node Id="1116" Type="say" OnEnter="__gptDialog_addNodeToIgnoreList(context.currentNode.id);" NextId="736" WaitForPrevious="true" Cache="true">
+      <Text Global:RawText="false">
+        <audio src="voice:keyboard_sound_short">...</audio>
+      </Text>
+    </Node>
+    <Node Id="1119" Type="say" OnEnter="__gptDialog_addNodeToIgnoreList(context.currentNode.id);" OnLeave="__typingSoundPlayed = true;" NextId="845" WaitForPrevious="true" Cache="true">
+      <Text Global:RawText="false">
+        <audio src="voice:keyboard_sound_short">...</audio>
+      </Text>
+    </Node>
+    <Node Id="1219" Type="label" NextId="1222" Title="barged in" />
+    <Node Id="1223" Type="label" NextId="44" Title="main recognize" />
+    <Node Id="1224" Type="label" NextId="{__gptDialog_makeLocalNodeId(&quot;1223&quot;)}" Title="main recognize" />
+    <Node Id="1227" Type="label" NextId="{__gptDialog_makeLocalNodeId(&quot;1223&quot;)}" Title="main recognize" />
+    <Node Id="1229" Type="label" NextId="{__gptDialog_makeLocalNodeId(&quot;1223&quot;)}" Title="main recognize" />
+    <Node Id="1231" Type="label" NextId="{__gptDialog_makeLocalNodeId(&quot;581&quot;)}" Title="bots activity start" />
+    <Node Id="1233" Type="label" NextId="{__gptDialog_makeLocalNodeId(&quot;581&quot;)}" Title="bots activity start" />
+    <Node Id="1235" Type="label" NextId="809" Title="LLM API call" />
+    <Node Id="1237" Type="label" NextId="{__gptDialog_makeLocalNodeId(&quot;1235&quot;)}" Title="LLM API call" />
+    <Node Id="1239" Type="label" NextId="{__gptDialog_makeLocalNodeId(&quot;1235&quot;)}" Title="LLM API call" />
+    <Node Id="1241" Type="label" NextId="{__gptDialog_makeLocalNodeId(&quot;581&quot;)}" Title="bots activity start" />
+    <Node Id="1244" Type="label" NextId="{__gptDialog_makeLocalNodeId(&quot;1223&quot;)}" Title="main recognize" />
+    <Node Id="1245" Type="label" NextId="{__gptDialog_makeLocalNodeId(&quot;1223&quot;)}" Title="main recognize" />
+    <Node Id="1247" Type="label" NextId="{__gptDialog_makeLocalNodeId(&quot;1223&quot;)}" Title="main recognize" />
+    <Node Id="1249" Type="label" NextId="{__gptDialog_makeLocalNodeId(&quot;1223&quot;)}" Title="main recognize" />
+    <Node Id="1251" Type="label" NextId="{__gptDialog_makeLocalNodeId(&quot;1223&quot;)}" Title="main recognize" />
+    <Node Id="1254" Type="label" NextId="464" Title="exit" />
+    <Node Id="1255" Type="label" NextId="{__gptDialog_makeLocalNodeId(&quot;1254&quot;)}" Title="exit" />
+    <Node Id="1258" Type="label" NextId="{__gptDialog_makeLocalNodeId(&quot;1254&quot;)}" Title="exit" />
+    <Node Id="1260" Type="label" NextId="{__gptDialog_makeLocalNodeId(&quot;1223&quot;)}" Title="main recognize" />
+    <Node Id="1263" Type="label" NextId="{__gptDialog_makeLocalNodeId(&quot;1223&quot;)}" Title="main recognize" />
+    <Node Id="1264" Type="label" NextId="{__gptDialog_makeLocalNodeId(&quot;581&quot;)}" Title="bots activity start" />
+    <Node Id="1266" Type="label" NextId="{__gptDialog_makeLocalNodeId(&quot;371&quot;)}" Title="function call" />
+    <Node Id="486" Type="case" FallbackId="564">
+      <When Eval="transformFunctionName(__gptFunctionCall) == transformFunctionName(&quot;user_asks_to_wait&quot;)" NextId="597" />
+      <When Eval="transformFunctionName(__gptFunctionCall) == transformFunctionName(&quot;user_wants_to_wait&quot;)" NextId="588" />
+      <When Eval="__validOutput == false" NextId="577" />
+    </Node>
+    <Node Id="496" Type="case" FallbackId="1244">
+      <When Eval="__gptFunctionCallArgs != null &amp;&amp; (__gptFunctionCallArgs.implicit == true || __gptFunctionCallArgs.implicit == 'true')" NextId="1244" />
+      <When Eval="__gptFunctionCallArgs != null &amp;&amp; (__gptFunctionCallArgs.implicit == false || __gptFunctionCallArgs.implicit == 'false')" NextId="491" />
+    </Node>
+    <Node Id="770" Type="case" FallbackId="1241">
+      <When Eval="__customConfirmationMessage != ''" NextId="776" />
+    </Node>
+    <Node Id="566" Type="case" FallbackId="577">
+      <When Eval="__validOutput == true &amp;&amp; __confirmIntentMode &gt; 0" NextId="677" />
+      <When Eval="__validOutput == true" NextId="464" />
+    </Node>
+  </CallScript>
+</Root>

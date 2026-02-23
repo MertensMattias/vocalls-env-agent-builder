@@ -1,0 +1,165 @@
+---
+alwaysApply: true
+---
+
+# Absolute Prohibitions - No Exceptions
+
+## Documentation Creation - Forbidden
+
+- **NEVER** create .md files unless explicitly requested by the user with clear permission
+- **NEVER** create completion reports, status summaries, implementation plans, or progress documents
+- **NEVER** create "README", "GUIDE", "SUMMARY", "PLAN", "STATUS", "REPORT", or "COMPLETE" markdown files
+- **NEVER** duplicate information that already exists in AGENTS.md, README.md, or existing docs/
+- **NEVER** create temporary documentation "for reference" - if it's important, update existing docs
+- **NEVER** include emoji or icon glyphs in any markdown or code file
+
+## Communication Style - Be Concise
+
+- Give me **only relevant, actionable feedback**
+- Skip the pleasantries, skip the summaries, skip the verbose explanations
+- Tell me: WHAT changed, WHY it matters, WHAT I need to know
+- If there's nothing important to report, say so in one sentence
+- **NO** "Here's what I did" essays - bullet points only for multi-step actions
+
+## Required Actions
+
+### Memory Intake Before Work
+
+- Before editing, read root `AGENTS.md`, the active project's `project_config.md`, and `workflow_state.md`
+- Confirm instructions in those files are followed; if context is missing, document it before coding
+- Keep `.cursor/rules/rules.mdc` (this file) in sync with workspace instructions
+
+### Maintain AGENTS.md - Always
+
+When you make changes to the codebase, you **MUST**:
+
+- Update AGENTS.md if you add/modify global functions, patterns, or constraints
+- Update the "Global Objects & Functions" section when adding utilities
+- Update the "Code Patterns & Conventions" section when establishing new patterns
+- Update architecture sections if you change how components interact
+- Keep AGENTS.md as the single source of truth for AI assistant instructions
+
+### Update Existing Docs - Sparingly
+
+Only update existing documentation when:
+
+- Core functionality changes that affects user workflows (README.md)
+- Development patterns change (AGENTS.md)
+- Technical reference needs correction (docs/*.md)
+
+## Decision Tree - Follow This
+
+Before creating ANY file, ask yourself:
+
+1. **Is this a .md file?** → DON'T CREATE IT (unless user explicitly requested)
+2. **Does this info exist elsewhere?** → UPDATE that file instead
+3. **Is this temporary status?** → Tell me verbally, don't document it
+4. **Is this for my reference?** → I don't need it, don't create it
+5. **Still think you need to create it?** → ASK ME FIRST
+
+## Communication Guidelines
+
+**DO:**
+
+- Be direct and concise
+- Focus on what matters
+- Use bullet points for multi-step changes
+- Update AGENTS.md when you add reusable patterns
+- Ask clarifying questions when needed
+
+**DON'T:**
+
+- Create documentation "for completeness"
+- Summarize what you just did in a new file
+- Create "helpful guides" without permission
+- Write verbose explanations of obvious changes
+- Apologize excessively or explain your reasoning at length
+
+## Examples
+
+**Good Response:**
+
+```text
+Updated `globalCode.js`:
+- Added `safeParseJSON()` utility function
+- Updated AGENTS.md to document the new function
+Done.
+```
+
+**Bad Response:**
+
+```text
+I've completed the implementation and created several documentation files:
+- IMPLEMENTATION_COMPLETE.md - summarizes what was done
+- TESTING_GUIDE.md - explains how to test
+- API_REFERENCE.md - documents the new functions
+
+Here's a detailed summary of what I accomplished...
+[500 more lines of explanation]
+```
+
+## Enforcement
+
+If you find yourself about to:
+
+- Create a .md file → STOP and ask permission
+- Write a long explanation → STOP and summarize in 1-3 sentences
+- Document "for reference" → STOP and update AGENTS.md instead
+
+## Markdown Formatting Standards
+
+Follow these rules whenever you edit markdown files:
+
+### Code Blocks
+
+- ALWAYS add a blank line before opening ```
+- ALWAYS add a blank line after closing ```
+- NEVER place text immediately adjacent to the fences
+- ALWAYS specify a language when the content is code; use `text` for general snippets
+
+### Directory Trees
+
+- NEVER wrap ASCII directory trees (├──, └──) inside code fences
+- Keep directory layouts as plain text so they render as intended
+
+### Headings & Lists
+
+- ALWAYS insert a blank line before any heading (`#`, `##`, `###`, etc.)
+- ALWAYS insert a blank line before a list that follows a paragraph
+- NEVER leave multiple consecutive blank lines (max one in a row)
+
+### Examples
+
+Incorrect:
+
+````text
+### First-Time Setup
+```bash
+npm install
+```
+The wizard captures...
+````
+
+Correct:
+
+````text
+### First-Time Setup
+
+```bash
+npm install
+```
+
+The wizard captures...
+````
+
+Incorrect:
+
+vocalls-environment-template/
+├── core/
+
+Correct:
+
+vocalls-environment-template/
+├── core/
+
+**Remember: Your job is to code and maintain AGENTS.md, not to create documentation libraries.**

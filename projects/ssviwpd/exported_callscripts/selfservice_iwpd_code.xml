@@ -1,0 +1,2163 @@
+<Root>
+  <Configuration>
+    <Engines>
+      <SpeechSynt Voice="true" Engine="" />
+      <SpeechRecognition Engine="" />
+    </Engines>
+    <Localization>
+      <DefaultLanguage></DefaultLanguage>
+      <LanguageKey>en</LanguageKey>
+    </Localization>
+    <Variables>
+      <Variable DefaultValue="{&quot;AzureOpenAI&quot;}">__defaultLLMProvider</Variable>
+      <Variable DefaultValue="{&quot;gpt-4.1-mini&quot;}">__defaultModel</Variable>
+      <Variable DefaultValue="{&quot;&quot;}">__defaultServiceHost</Variable>
+      <Variable DefaultValue="{false}">__logPrompt</Variable>
+      <Variable DefaultValue="{true}">__allowBargeIn</Variable>
+      <Variable DefaultValue="{true}">__typingSound</Variable>
+      <Variable DefaultValue="{&quot;&quot;}">__timeZone</Variable>
+      <Variable DefaultValue="{&quot;Clara&quot;}">__name</Variable>
+      <Variable DefaultValue="{&quot;female&quot;}">__gender</Variable>
+      <Variable DefaultValue="{&quot;to assist customers with their banking-related queries&quot;}">__description</Variable>
+      <Variable DefaultValue="{&quot;ABC Bank&quot;}">__companyName</Variable>
+      <Variable DefaultValue="{&quot;Customer Support Agent for a Bank&quot;}">__companyRole</Variable>
+      <Variable DefaultValue="{&quot;empathetic, calm and respectful&quot;}">__tone</Variable>
+      <Variable DefaultValue="{&quot;clear, step-by-step, keep responses concise&quot;}">__interactionStyle</Variable>
+      <Variable DefaultValue="{&quot;customer of ABC Bank&quot;}">__targetCustomer</Variable>
+      <Variable DefaultValue="{&quot;English&quot;}">__language</Variable>
+      <Variable DefaultValue="{&quot;- **IMPORTANT**: When talking about time, use a conversational style. Instead of 09:00-10:00, say 'nine to ten'. - Convey human emotions and a natural rhythm. Sprinkle in filler words like 'uh' or 'oh', and use pauses to make the conversation feel real. - Keep your responses short, supportive, and engaging. Avoid long monologues and encourage back and forth dialogue. - Use a warm, friendly tone. Imagine you’re a real call center agent genuinely trying to help, not a robot reading a script. - Remember this is a voice call. Pay attention to intonation, use emotionally rich words, and add personal touches. Pace and pauses are important. - Use contractions naturally, like 'I'm' instead of 'I am.'&quot;}">__advancedInstructions</Variable>
+    </Variables>
+    <BackgroundNoise>true</BackgroundNoise>
+    <BreathInEffect>true</BreathInEffect>
+    <PreferredAudio>TTS</PreferredAudio>
+  </Configuration>
+  <CallScript xmlns:Global="https://designer.vocalls.cz/manual/attributes">
+    <Node Id="0" Type="transient" NextId="7" Title="input" Kind="Input" />
+    <Node Id="6" Type="transient" NextId="" Title="output" Kind="Output" />
+    <Node Id="7" Type="script" NextId="9">
+      <Script>// add a more thorough commentary
+
+__gptComponentVersion = "2.3.4";
+
+if (__logPrompt == true) {
+    log_debug("LLM component version " + __gptComponentVersion);
+}
+
+// default time zone
+if (!__timeZone) {
+    __timeZone = "America/New_York";
+}
+
+
+// check if we are chat or voice bot 
+__conversationType = 'chatbot'; 
+__conversationLanguage = context.language.substr(0, 2); 
+ 
+try { 
+    if (context.callInfo.from) { 
+        __conversationType = 'voicebot'; 
+    } 
+} catch (e) { 
+ 
+}
+
+// compatibility check
+if (typeof Task === "undefined") {
+    log_warn("The voicebot engine version is outdated, please update.");
+}
+
+if (__description &amp;&amp; wordCount(__description) &gt; 50) {
+    log_warn("Bot description too long! Use knowledge/objective instead!");
+}
+
+/*if (__defaultModel &amp;&amp; __defaultModel.indexOf("gpt-4.1") &gt;= 0) {
+    if (__defaultServiceHost == null || __defaultServiceHost.length == 0) {
+        __defaultServiceHost = "us.azure"; // currently workaround due to unavailability of gpt4.1-mini in EU
+    }
+}*/
+
+// init global localization texts and supporting functions 
+__gpt_repeat = []; 
+__gpt_noInput = []; 
+__gpt_wait = []; 
+__gpt_waitShort = []; 
+__gpt_waitConfirmation = []; 
+__gpt_confirmation = []; 
+__gpt_fill = []; 
+__gpt_bargeIn = [];
+__gpt_enteredNodes = [];
+
+// streaming consts
+__gptMaxTokens = 500;
+__gptShortWaitDelay = 1000;
+__gptLongWaitDelay = 2000;
+
+
+// init the related pointers
+__noInputPtr = 0;
+__confirmationPtr = 0;
+__fillPtr = 0;
+__repeatMessagePtr = 0;
+__waitMessagePtr = 0;
+__waitShortMessagePtr = 0;
+__bargeInMessagePtr = 0;
+__waitConfirmationMessagePtr = 0;
+ 
+__gptDialog_getNoInputMessage = function () { 
+    if (__gpt_noInput.length == 0) return ""; 
+ 
+    var responseMsg = __gpt_noInput[__noInputPtr]; 
+    __noInputPtr++; 
+ 
+    if (__noInputPtr &gt;= __gpt_noInput.length) { 
+        __noInputPtr = 0; 
+    } 
+ 
+    return responseMsg; 
+} 
+ 
+__gptDialog_getConfirmationMessage = function () { 
+    if (__gpt_confirmation.length == 0) return ""; 
+ 
+    var responseMsg = __gpt_confirmation[__confirmationPtr]; 
+    __confirmationPtr++; 
+ 
+    if (__confirmationPtr &gt;= __gpt_confirmation.length) { 
+        __confirmationPtr = 0; 
+    } 
+ 
+    return responseMsg; 
+} 
+ 
+__gptDialog_getFillMessage = function () { 
+    if (__gpt_fill.length == 0) return ""; 
+ 
+    var responseMsg = __gpt_fill[__fillPtr]; 
+    __fillPtr++; 
+ 
+    if (__fillPtr &gt;= __gpt_fill.length) { 
+        __fillPtr = 0; 
+    } 
+ 
+    return responseMsg; 
+} 
+ 
+__gptDialog_getRepeatMessage = function () { 
+    if (__gpt_repeat.length == 0) return ""; 
+ 
+    var responseMsg = __gpt_repeat[__repeatMessagePtr]; 
+    __repeatMessagePtr++; 
+ 
+    if (__repeatMessagePtr &gt;= __gpt_repeat.length) { 
+        __repeatMessagePtr = 0; 
+    } 
+ 
+    return responseMsg; 
+} 
+ 
+__gptDialog_getWaitMessage = function () { 
+    if (__gpt_wait.length == 0) return ""; 
+ 
+    var responseMsg = __gpt_wait[__waitMessagePtr]; 
+    __waitMessagePtr++; 
+ 
+    if (__waitMessagePtr &gt;= __gpt_wait.length) { 
+        __waitMessagePtr = 0; 
+    } 
+ 
+    return responseMsg; 
+} 
+ 
+__gptDialog_getWaitMessageShort = function () { 
+    if (__gpt_waitShort.length == 0) return ""; 
+ 
+    var responseMsg = __gpt_waitShort[__waitShortMessagePtr]; 
+    __waitShortMessagePtr++; 
+ 
+    if (__waitShortMessagePtr &gt;= __gpt_waitShort.length) { 
+        __waitShortMessagePtr = 0; 
+    } 
+ 
+    return responseMsg; 
+} 
+ 
+__gptDialog_getbargeInMessage = function () { 
+    if (__gpt_bargeIn.length == 0) return ""; 
+ 
+    var responseMsg = __gpt_bargeIn[__bargeInMessagePtr]; 
+    __bargeInMessagePtr++; 
+ 
+    if (__bargeInMessagePtr &gt;= __gpt_bargeIn.length) { 
+        __bargeInMessagePtr = 0; 
+    } 
+ 
+    return responseMsg; 
+} 
+ 
+__gptDialog_getWaitConfirmationMessage = function () { 
+    if (__gpt_waitConfirmation.length == 0) return ""; 
+ 
+    var responseMsg = __gpt_waitConfirmation[__waitConfirmationMessagePtr]; 
+    __waitConfirmationMessagePtr++; 
+ 
+    if (__waitConfirmationMessagePtr &gt;= __gpt_waitConfirmation.length) { 
+        __waitConfirmationMessagePtr = 0; 
+    } 
+ 
+    return responseMsg; 
+} 
+ 
+ 
+ 
+ 
+// persona definition (mapped from Component input variables) 
+__persona = { 
+    "name": __name, 
+    "botType": __conversationType, 
+    "gender": __gender, 
+    "companyName": __companyName, 
+    "tone": __tone, 
+    "companyRole": __companyRole, 
+    "targetCustomer": __targetCustomer, 
+    "language": __language, 
+    "description": __description, 
+    "interactionStyle": __interactionStyle, 
+    "allowBargeIn": (__allowBargeIn == 'true' || __allowBargeIn == true) 
+} 
+ 
+// check if we have barge-in support on callbot backed service 
+if (typeof stopVoiceDetection !== 'function') { 
+    __persona.allowBargeIn = false; 
+} 
+ 
+// general seed for all gpt requests 
+__gptSeed = 2017; 
+ 
+// function history 
+__gptFunctionCallHistory = []; 
+ 
+// get previous messages from the dialog 
+__ignoredNodeList = []; 
+ 
+// where to start when generating dialog history 
+__gptDialogHistoryStartFrom = 0; 
+__gptLastBotSpeechNode = null;
+
+// controls the straming requests for omitting of pauses / segmentation (SMS chatbot)
+__gptPreventStreaming = false;
+ 
+
+__gptDialog_mergeAssistantSpeechAndFunctionCall = function (input) {
+    var callMessage = null;
+    var result = [];
+    for (var i = 0; i &lt; input.length; i++) {
+        var msg = input[i];
+        if (msg.role === 'function' || msg.role === 'tool') {
+            if (callMessage) {
+                // Finalize call
+                if (callMessage.length &gt; 0) result[result.length - 1].content = callMessage.join(" ");
+                callMessage = null;
+            }
+        }
+        else if (msg.role === 'assistant') {
+            if (typeof msg.tool_calls !== 'undefined' || typeof msg.function_call !== 'undefined') {
+                if (callMessage) throw new Error("A function call message was found after another with no result inbetween!");
+                // Prepare content parts
+                callMessage = [];
+                if (typeof msg.content !== 'undefined') {
+                    callMessage.push(msg.content);
+                }
+                result.push(Object.assign({}, msg));
+                continue;
+            }
+            if (callMessage) {
+                if (typeof msg.content !== 'undefined') {
+                    callMessage.push(msg.content);
+                }
+                continue;
+            }
+        }
+        else if (callMessage) throw new Error(`A '{msg.role}' message was found after a function call with no result!`);
+        result.push(msg);
+    }
+    if (callMessage) throw new Error("A function call message has no result.");
+    return result;
+}
+
+
+// returns all gpt messages
+__gptDialog_getPrevMessages = function () {
+    var _previousConversation = []; 
+    for (i = __gptDialogHistoryStartFrom; i &lt;= context.speakFlow.size - 1; i++) {
+
+        var __curItem = context.speakFlow.get(i);
+ 
+        // node is not marked as "ignore" 
+        if (!__ignoredNodeList.includes(__curItem.nodeId)) { 
+ 
+            var __role = null; 
+            if (__curItem.type == 3) { 
+                __role = "assistant"; 
+            } else if (__curItem.type == 5) { 
+                __role = "user"; 
+            } 
+ 
+            if (__role) {
+
+                var isPreviousFunctionCall = false;
+                if (_previousConversation.length &gt; 1
+                    &amp;&amp; _previousConversation[_previousConversation.length - 2]["function_call"]) {
+                        isPreviousFunctionCall = true;
+                        // this will not split assistant response to "set result" with following generated message by objective
+                    }
+
+
+                var __content = __curItem.activity;
+                if (__role == 'user') {
+                    __content = __gptDialog_postprocessDialogSTT(__content);
+                }
+
+                if (_previousConversation.length &gt; 0 
+                    &amp;&amp; isPreviousFunctionCall == false
+                    &amp;&amp; __gptLastBotSpeechNode == __curItem.nodeId
+                    &amp;&amp; _previousConversation[_previousConversation.length - 1]["role"] == __role 
+                    &amp;&amp; !_previousConversation[_previousConversation.length - 1]["function_call"]) { 
+                    // last message is the same, lets append message, not push new  
+                    _previousConversation[_previousConversation.length - 1]["content"] = _previousConversation[_previousConversation.length - 1]["content"] + " " + __content; 
+                } else {
+                    // push new message  
+                    _previousConversation.push({
+                        "role": __role, 
+                        "content": __content 
+                    }); 
+                    __gptLastBotSpeechNode = __curItem.nodeId;
+                } 
+            } 
+        } 
+
+        // add function call to the list 
+        for (f = 0; f &lt; __gptFunctionCallHistory.length; f++) {
+            if (__gptFunctionCallHistory[f].speakFlowIndexFunctionCall == i
+                &amp;&amp; __gptFunctionCallHistory[f].componentId == __gptComponentId) {
+                _previousConversation.push({
+                    "role": "assistant",
+                    "function_call": {
+                        "name": __gptFunctionCallHistory[f].name,
+                        "arguments": __gptFunctionCallHistory[f].arguments,
+                    }
+                });
+            }
+        }        
+ 
+        //add result of function call to history 
+        for (f = 0; f &lt; __gptFunctionCallHistory.length; f++) { 
+            if (__gptFunctionCallHistory[f].speakFlowIndexResultSet == i 
+                &amp;&amp; __gptFunctionCallHistory[f].componentId == __gptComponentId) { 
+ 
+                var __content = __gptFunctionCallHistory[f].result; 
+                if (__content) { 
+                    if (typeof __content === 'string' || __content instanceof String) { 
+                        // content is string - just trim it 
+                        __content = __content.trim(); 
+                    } else { 
+                        //its object, serialize it 
+                        __content = JSON.stringify(__content); 
+                    } 
+                } else { 
+                    __content = ""; 
+                } 
+ 
+                _previousConversation.push({ 
+                    "role": "function", 
+                    "name": __gptFunctionCallHistory[f].name, 
+                    "content": __content 
+                }); 
+            } 
+        } 
+ 
+    } 
+
+    switch (__gptProvider) {
+        // do not merge messages -&gt; not needed for OpenAI and AzureOpenAI
+        /*case "AzureOpenAI": 
+        case "OpenAI":*/
+        case "Gemini":
+        case "Claude": {
+            _previousConversation = __gptDialog_mergeAssistantSpeechAndFunctionCall(_previousConversation);
+            break;
+        }
+    }
+    
+    return _previousConversation; 
+} 
+ 
+// add node to ignore list 
+__gptDialog_addNodeToIgnoreList = function (nodeId) { 
+    if (__ignoredNodeList.includes(nodeId) == false) { 
+        __ignoredNodeList.push(nodeId); 
+    } 
+} 
+ 
+// removes all previous conversation history 
+__gptDialog_clearDialogHistory = function () { 
+    __gptDialogHistoryStartFrom = context.speakFlow.size; 
+    /*for (i = 0; i &lt;= context.speakFlow.size - 1; i++) { 
+        var __currNodeId = context.speakFlow.get(i).nodeId; 
+        if (__ignoredNodeList.includes(__currNodeId) == false) { 
+            __gptDialog_addNodeToIgnoreList(__currNodeId); 
+        } 
+    }*/ 
+} 
+ 
+__gptDialog_postprocessDialogSTT = function (__gptInput) { 
+
+    // fix of common word issues
+    if (__conversationType == 'voicebot') {
+        switch (context.language.substr(0, 2)) {
+            case "en": {
+                __gptInput = __gptInput.replace(/SEC/g, 'sec');
+                break;
+            }
+        }
+    }
+
+
+    if (typeof postprocessDialogSTT === 'function') { 
+        __gptInputNew = postprocessDialogSTT(__gptInput); 
+        if (__gptInputNew) { 
+            return __gptInputNew; 
+        } 
+    } 
+    return __gptInput; 
+} 
+ 
+__gptDialog_preprocessDialogTTS = function (__gptOutput) { 
+
+    // default replacements per language
+    if (__conversationType == 'voicebot' &amp;&amp; (__conversationLanguage == 'cs' || __conversationLanguage == 'sk')) {
+        __gptOutput = __gptOutput.replace(/:00 hodin/g, ':00'); // 9 hodin hodin  
+        __gptOutput = __gptOutput.replace(/\/a(?!&gt;)|\\a(?!&gt;)/g, ''); // podíval/a podíval\a  
+    }
+ 
+    if (__conversationType == 'voicebot') { 
+        __gptOutput = __gptOutput.replace(/:\)/g, ''); // replace :) by nothing 
+        __gptOutput = __gptOutput.replace(/\*/g, ' '); // replace * by space 
+        __gptOutput = __gptOutput.replace(/!/g, '.'); // on voice channel, bot is screaming when exclamation used
+
+        // escape non valid xml characters
+        if (__conversationLanguage == 'en') {
+            __gptOutput = __gptOutput.replace(/&amp;/g, ' and '); // replace "&amp;" to "and"
+        }
+        __gptOutput = XML.formatSequential([__gptOutput]);
+        
+    } else if (__conversationType == 'chatbot') {
+        
+        // check if output is not valid XML
+        if (__gptIsValidXML(__gptOutput) == false) {
+            // escape non valid xml characters
+            __gptOutput = XML.formatSequential([__gptOutput]);
+        }
+    }
+ 
+    // check if user defined their custom function 
+    if (__gptOutput) { 
+        if (typeof preprocessDialogTTS === 'function') { 
+            __gptOutputNew = preprocessDialogTTS(__gptOutput); 
+            if (__gptOutputNew) { 
+                return __gptOutputNew; 
+            } 
+        } 
+    } 
+ 
+    return __gptOutput; 
+}
+
+__gptGetLastSpeaker = function () {
+    var speakFlow = __gptGetCleanSpeakFlow();
+
+    if (!speakFlow.length)
+        return "n/a";
+
+    var last = speakFlow.pop();
+    return last.type == 5
+        ? "user"
+        : "bot";
+};
+
+__gptGetCleanSpeakFlow = function () {
+    var output = [];
+
+    for (var i = 0; i &lt; context.speakFlow.size; i++) {
+        var item = context.speakFlow.get(i);
+
+        if ([3, 5].includes(item.type))
+            output.push(item);
+    }
+    return output;
+};
+
+// return true if bot said something
+__gptBotSpoke = function () {
+    for (var i = 0; i &lt; context.speakFlow.size; i++) {
+        if (context.speakFlow.get(i).type == 3) return true;
+    }
+    return false;
+}
+
+/* PUBLIC FUNCTIONS */ 
+getDialogHistory = function () { 
+    return __gptDialog_getPrevMessages(); 
+};
+
+addToDialogIgnored = function (nodeId) { 
+    return __gptDialog_addNodeToIgnoreList(nodeId); 
+};
+
+clearDialogHistory = function () { 
+    return __gptDialog_clearDialogHistory(); 
+};
+
+llmPreventStreaming = function (value = true) {
+    __gptPreventStreaming = value;
+};
+
+
+getCurrentDialogDate = function () {
+    return new Date(); /* current server date and time (this function should be overrided) */
+};</Script>
+    </Node>
+    <Node Id="13" Type="script" NextId="6">
+      <Script>/* GENERIC MESSAGES (any quantity per message, recommended 2-3 pro better CX) */
+
+// This will be used if the bot didn't understand what the clinet said
+__gpt_repeat = ['¿Una vez más, por favor?', 'Perdón, ¿puedes repetirlo?'];
+
+// This will be used if the client was silent (or speech was not recognized)
+__gpt_noInput = ['¿Me escuchas?', '¿Sigues ahí?'];
+
+// The bot will say this if speech processing (STT/LLM) takes more than 2 seconds
+__gpt_waitShort = ['Bien', 'Perfecto', 'Bueno', 'Muy bien', 'okey', 'pues'];
+
+// The bot will say this if speech processing (STT/LLM) takes more than 2 seconds
+__gpt_wait = ['Un momento, por favor.', 'Dame un segundo, por favor.', 'Sólo un momento, por favor.'];
+
+// This bot will tell if the client needs more time
+__gpt_waitConfirmation = ['Claro.', 'Tómate tu tiempo.', 'No hay problema.'];
+
+// This is what the bot  will say if the client interrupts it while during speech
+__gpt_bargeIn = ['¿Me repites, por favor?', 'Lo siento, continúa.', 'Adelante.'];
+
+
+/* GENERAL GPT PROMPT */
+/* This function will be called at any time from "Dialog Node" and "Say Message" to generate a dialog */
+__gptDialog_getBasePrompt = function (objective) {
+
+    // persona definition
+    var prompt = `TU PERSONALIDAD:
+Tu eres un ${__persona.botType} trabajando en una compañía llamada ${__persona.companyName} con las siguientes especificaciones:
+- Tu nombre es "${__persona.name}"
+- Tu género es "${__persona.gender}"
+- Tu estilo/tono comunicacional es "${__persona.tone}"
+- Tu interactúas con clientes ${__persona.interactionStyle}
+- Tu rol es ${__persona.companyRole}
+- Tu estás hablando a ${__persona.targetCustomer}
+- Tu función principal es ${__persona.description}
+`;
+
+    // conditional definition only for voice channel
+    if (__conversationType == 'voicebot') {
+        if (context.callInfo.direction == 'inbound') {
+            prompt += `- Te estás comunicando con el usuario por teléfono, es una llamada entrante.
+`;
+        } else {
+            prompt += `- Te estás comunicando con el usuario por teléfono, esta es una llamada saliente.
+`;
+        }
+    }
+
+    // general instructions START
+    prompt += `La fecha actual es ` + (getCurrentDialogDate().toLocaleDateString(context.language, { timeZone: __timeZone })) + ` y la hora es ` + (getCurrentDialogDate().toLocaleTimeString(context.language, { timeZone: __timeZone })) + `
+
+INSTRUCCIONES GENERALES:
+- Usa lenguaje claro y conciso.
+- Mantén tus oraciones breves y concisas, como en una llamada telefónica.
+- Imita una comunicación interpersonal auténtica.
+- Asegúrate de que tus respuestas están alineadas con las necesidades del cliente.
+- Responde únicamente a las preguntas que estén dentro de tu ámbito de tareas.
+- Si el usuario solicita algo que tú no puedes hacer, discúlpate por no poder ayudarle con eso.
+- Si no sabes la respuesta, no la inventes y di que no lo sabes.
+- ¡No respondas ninguna pregunta que no esté dentro de tu objetivo!
+- Siempre comunícate en el idioma ${__persona.language}.
+`;
+
+    // conditional instruction only for voice channel
+    if (__conversationType == 'voicebot') {
+        prompt += `- No utilices ningún emoticón durante el diálogo.
+- No utilices sintaxis Markdown, JSON o HTML durante el diálogo.
+`;
+    }
+
+
+    // advanced instructions
+    if (typeof __advancedInstructions !== 'undefined') {
+        prompt += `
+INSTRUCCIONES AVANZADAS:
+${__advancedInstructions}
+
+`;
+    }
+
+
+    // general knowledge
+    if (typeof __generalKnowledge !== 'undefined') {
+        prompt += `
+TU CONOCIMIENTO ES:
+${__generalKnowledge}
+
+`;
+    }
+
+
+
+    // company knowledge
+    if (typeof __companyInformation !== 'undefined') {
+        prompt += `
+INFORMACIÓN SOBRE ${__persona.companyName}:
+${__companyInformation}
+
+`;
+    }
+
+
+    // info about the user
+    if (typeof __generalUserInfo !== 'undefined') {
+        prompt += `
+INFORMACIÓN DEL USUARIO:
+${__generalUserInfo}
+
+`;
+    }
+
+
+    // Main objective (passed from "Dialog Node")
+    if (objective) {
+        prompt += `
+
+Ahora, tu OBJETIVO ACTUAL en el diálogo es:
+${objective}
+
+`;
+    }
+
+    return prompt;
+}</Script>
+    </Node>
+    <Node Id="9" Type="case" FallbackId="17">
+      <When Eval="__conversationLanguage == 'cl'" NextId="13" />
+      <When Eval="__conversationLanguage == 'co'" NextId="13" />
+      <When Eval="__conversationLanguage == 'mx'" NextId="13" />
+      <When Eval="__conversationLanguage == 'es'" NextId="13" />
+      <When Eval="__conversationLanguage == 'cs'" NextId="21" />
+      <When Eval="__conversationLanguage == 'pl'" NextId="33" />
+      <When Eval="__conversationLanguage == 'et'" NextId="47" />
+      <When Eval="__conversationLanguage == 'lv'" NextId="50" />
+      <When Eval="__conversationLanguage == 'sk'" NextId="44" />
+      <When Eval="__conversationLanguage == 'de'" NextId="60" />
+      <When Eval="__conversationLanguage == 'fr'" NextId="65" />
+      <When Eval="context.language == 'nl-NL'" NextId="69" />
+      <When Eval="context.language == 'nl-BE'" NextId="99" />
+      <When Eval="__conversationLanguage == 'nl'" NextId="69" />
+      <When Eval="__conversationLanguage == 'id'" NextId="109" />
+      <When Eval="__conversationLanguage == 'hu'" NextId="114" />
+    </Node>
+    <Node Id="17" Type="script" NextId="6">
+      <Script>/* GENERIC MESSAGES (any quantity per message, recommended 2-3 pro better CX) */
+
+// This will be used if the bot didn't understand what the clinet said
+__gpt_repeat = ['Once again please?', 'Sorry? Can you repeat that?'];
+
+// This will be used if the client was silent (or speech was not recognized)
+__gpt_noInput = ['Can you hear me?', 'Are you still there?'];
+
+// The bot will say this if speech processing (STT/LLM) takes less than 1 second
+__gpt_waitShort = ["Well...", "So...", "Uh-huh...", "Actually...", "One second...", "Hmm well...", "Hang on...", "Hmm actually...", "Just a sec...", "Mmm-hmm...", "Hold on a second...", "Hmm, so...", "Give me a sec..", "Let's see...", "Hmm...", "Just a moment...", "Hold on...", "One moment..."];
+
+// The bot will say this if speech processing (STT/LLM) takes more than 2 seconds
+__gpt_wait = ['One moment please.', 'Just a second please.', 'Just a moment, please.'];
+
+// This bot will tell if the client needs more time
+__gpt_waitConfirmation = ['Sure.', 'Take your time.', 'No problem.'];
+
+// This is what the bot  will say if the client interrupts it while during speech
+__gpt_bargeIn = ['Say again please?', 'Sorry go ahead', 'Carry on', 'Go ahead.', 'Please continue.', 'Sorry, go on.', 'Come again?', 'Apologies go on.', 'Keep going.', 'Say again?'];
+
+
+/* GENERAL GPT PROMPT */
+/* This function will be called at any time from "Dialog Node" and "Say Message" to generate a dialog */
+__gptDialog_getBasePrompt = function (objective) {
+
+// persona definition
+    var prompt = `YOUR PERSONA:
+You are a ${__persona.botType} working in a company named ${__persona.companyName} with the following specifications:
+- Your name is "${__persona.name}"
+- Your gender is "${__persona.gender}"
+- Your communication style/tone is "${__persona.tone}"
+- You will engage with customers ${__persona.interactionStyle}
+- Your role in the company is ${__persona.companyRole}
+- You are speaking to ${__persona.targetCustomer}
+- Your main function is ${__persona.description}
+`;
+
+// conditional definition only for voice channel
+    if (__conversationType == 'voicebot') {
+        if (context.callInfo.direction == 'inbound') {
+            prompt += `- You are speaking with the user by phone (phone number:${context.phone}), it is an incoming call.
+`;
+        } else {
+            prompt += `- You are speaking with the user by phone (phone number:${context.phone}), this is an outgoing call.
+`;
+        }
+    }
+
+// general instructions START
+    prompt += `
+
+GENERAL INSTRUCTIONS:
+- Use clear and concise language.
+- Keep your sentences short and to the point, like in a phone call.
+- Mimic authentic interpersonal communication.
+- Ensure your responses are aligned with the customer's needs.
+- Only anwer questions that are within your scope of tasks.
+- If user asks for something you can't do, apologize that you can't help with that.
+- If you don't know the answer, don't make it up and say you don't know.
+- Do not answer any questions that are not within your objective!
+- Always communicate in ${__persona.language} language.
+`;
+
+// conditional instruction only for voice channel
+    if (__conversationType == 'voicebot') {
+        prompt += `- Do not use any emoticons during dialogue.
+- Do not use markdown, JSON or HTML syntax during dialogue.
+`;
+    }
+
+
+// advanced instructions
+    if (typeof __advancedInstructions !== 'undefined') {
+        prompt += `
+ADVANCED INSTRUCTIONS:
+${__advancedInstructions}
+
+`;
+    }
+
+
+// general knowledge
+    if (typeof __generalKnowledge !== 'undefined') {
+        prompt += `
+YOUR KNOWLEDGE IS:
+${__generalKnowledge}
+
+`;
+    }
+
+
+
+// company knowledge
+    if (typeof __companyInformation !== 'undefined') {
+        prompt += `
+INFORMATION ABOUT ${__persona.companyName}:
+${__companyInformation}
+
+`;
+    }
+
+
+// info about the user
+    if (typeof __generalUserInfo !== 'undefined') {
+        prompt += `
+INFO ABOUT THE USER:
+${__generalUserInfo}
+
+`;
+    }
+
+// Current date and time in given timezone
+    prompt += `Current date is ` + (getCurrentDialogDate().toLocaleDateString(context.language, { timeZone: __timeZone })) + ` and time is ` + (getCurrentDialogDate().toLocaleTimeString(context.language, { timeZone: __timeZone })) +`
+
+`;
+
+// Main objective (passed from "Dialog Node")
+    if (objective) {
+        prompt += `
+
+Now, your CURRENT OBJECTIVE in the dialog is:
+${objective}
+
+`;
+    }
+
+    return prompt;
+}</Script>
+    </Node>
+    <Node Id="21" Type="script" NextId="6">
+      <Script>/* GENERIC MESSAGES (any quantity per message, recommended 2-3 pro better CX) */
+
+// This will be used if the bot didn't understand what the clinet said
+__gpt_repeat = ["Ještě jednou prosím?", "Můžete to zopakovat prosím?"];
+
+// This will be used if the client was silent (or speech was not recognized)
+__gpt_noInput = ["Slyšíte mě?", "Jste tam ještě?"];
+
+// The bot will say this if speech processing (STT/LLM) takes more than 2 seconds
+__gpt_waitShort = ['No', 'É', 'Ehm', 'Áha', 'Eh', 'Nóó'];
+
+// The bot will say this if speech processing (STT/LLM) takes more than 2 seconds
+__gpt_wait = ["Okamžik prosím.", "Vteřinku prosím.", "Malý moment prosím."];
+
+// This bot will tell if the client needs more time
+__gpt_waitConfirmation = ['Jistě.', 'V pořádku.', 'Žádný problém.'];
+
+// This is what the bot  will say if the client interrupts it while during speech
+__gpt_bargeIn = ['Pardon povídejte', 'Ještě jednou prosím?', 'Pardon pokračujte'];
+
+
+/* GENERAL GPT PROMPT */
+/* This function will be called at any time from "Dialog Node" and "Say Message" to generate a dialog */
+__gptDialog_getBasePrompt = function (objective) {
+
+    // persona definition
+    var prompt = `TVOJE OSOBNOST:
+Jsi ${__persona.botType} a pracuješ ve společnosti ${__persona.companyName} s následujícím upřesněním:
+- Tvé jméno je "${__persona.name}"
+- Tvé pohlaví je "${__persona.gender}"
+- Tvůj styl komunikace je "${__persona.tone}"
+- S uživatelem budeš jednat ${__persona.interactionStyle}
+- Tvá role ve společnosti je ${__persona.companyRole}
+- Mluvíš s ${__persona.targetCustomer}
+- Tvůj hlavní úkol je ${__persona.description}
+`;
+
+    // conditional definition only for voice channel
+    if (__conversationType == 'voicebot') {
+        if (context.callInfo.direction == 'inbound') {
+            prompt += `- S uživatelem mluvíš po telefonu, jedná se o příchozí hovor.
+`;
+        } else {
+            prompt += `- S uživatelem mluvíš po telefonu, jedná se o odchozí hovor.
+`;
+        }
+    }
+
+    // general instructions START
+    prompt += `Aktuální datum je ` + (getCurrentDialogDate().toLocaleDateString(context.language, { timeZone: __timeZone })) + ` a čas je ` + (getCurrentDialogDate().toLocaleTimeString(context.language, { timeZone: __timeZone })) + `
+
+HLAVNÍ INSTRUKCE:
+- Používej jednoznačný a srozumitelný jazyk.
+- Odpovídej krátké věty a vždy jdi k věci, jako v telefonním hovoru.
+- Napodobuj autentickou mezilidskou komunikaci.
+- Klientovi vždy vykej!
+- Ujisti se, že jsou tvé odpovědi v souladu s potřebami zákazníka.
+- Odpovídej pouze na dotazy, které jsou v rámci tvého úkolu.
+- Pokud chce uživatel něco, co nemůžeš udělat, tak se omluv a vysvětli, že to nemůžeš udělat.
+- Pokud nevíš odpověď, tak si ji nevymýšlej a řekni že nevíš.
+- Neodpovídej na žádné otázky, které nejsou v rámci tvého úkolu!
+- Vždy mluv v ${__persona.language} jazyce.
+`;
+
+    // conditional instruction only for voice channel
+    if (__conversationType == 'voicebot') {
+        prompt += `- Nepoužívej žádné emotikony během dialogu.
+- Nepoužívej markdown, JSON nebo HTML syntaxi během dialogu.
+`;
+    }
+
+
+    // advanced instructions
+    if (typeof __advancedInstructions !== 'undefined') {
+        prompt += `
+DODATEČNÉ INSTRUKCE:
+${__advancedInstructions}
+
+`;
+    }
+
+
+    // general knowledge
+    if (typeof __generalKnowledge !== 'undefined') {
+        prompt += `
+TVOJE ZNALOST JE:
+${__generalKnowledge}
+
+`;
+    }
+
+
+
+    // company knowledge
+    if (typeof __companyInformation !== 'undefined') {
+        prompt += `
+INFORMACE O SPOLEČNOSTI ${__persona.companyName}:
+${__companyInformation}
+
+`;
+    }
+
+
+    // info about the user
+    if (typeof __generalUserInfo !== 'undefined') {
+        prompt += `
+INFORMACE O UŽIVATELI:
+${__generalUserInfo}
+
+`;
+    }
+
+
+    // Main objective (passed from "Dialog Node")
+    if (objective) {
+        prompt += `
+
+Nyní je tvůj hlavní cíl v dialogu toto:
+${objective}
+
+`;
+    }
+
+    return prompt;
+}</Script>
+    </Node>
+    <Node Id="33" Type="script" NextId="6">
+      <Script>/* GENERIC MESSAGES (any quantity per message, recommended 2-3 pro better CX) */
+
+// This will be used if the bot didn't understand what the clinet said
+__gpt_repeat = ['Czy mogę poprosić powtórzyć jeszcze raz?', 'Przepraszam, czy mógłby Pan powtórzyć?', 'Przepraszam, czy mogłaby Pani powtórzyć?'];
+
+// This will be used if the client was silent (or speech was not recognized)
+__gpt_noInput = ['Czy mnie Pan słyszy?', 'Czy mnie Pani słyszy?', 'Czy jest Pan nadal na linii?', 'Czy jest Pani nadal na linii?'];
+
+// The bot will say this if speech processing (STT/LLM) takes more than 2 seconds
+__gpt_waitShort = ['Zaraz', 'Ehm', 'Hm', 'Hmm'];
+
+// The bot will say this if speech processing (STT/LLM) takes more than 2 seconds
+__gpt_wait = ['Proszę o chwilę cierpliwości.', 'Sekundkę, proszę.', 'Momencik, proszę.'];
+
+// This bot will tell if the client needs more time
+__gpt_waitConfirmation = ['Oczywiście.', 'Proszę się nie spieszyć.', 'Nie ma problemu, czekam.'];
+
+// This is what the bot  will say if the client interrupts it while during speech
+__gpt_bargeIn = ['Przepraszam, czy mógłby Pan powtórzyć?', 'Przepraszam, czy mogłaby Pani powtórzyć?', 'Przepraszam, proszę kontynuować.', 'Proszę mówić dalej.'];
+
+
+/* GENERAL GPT PROMPT */
+/* This function will be called at any time from "Dialog Node" and "Say Message" to generate a dialog */
+__gptDialog_getBasePrompt = function (objective) {
+
+    // persona definition
+    var prompt = `TWOJA PERSONA:
+Jesteś ${__persona.botType} pracującym w firmie ${__persona.companyName} o następujących cechach:
+- Nazywasz się "${__persona.name}"
+- Twoja płeć to "${__persona.gender}"
+- Twój styl komunikacji/ton to "${__persona.tone}"
+- Angażujesz się w rozmowę z klientami ${__persona.interactionStyle}
+- Twoja rola to ${__persona.companyRole}
+- Rozmawiasz z ${__persona.targetCustomer}
+- Twoja główna funkcja to ${__persona.description}
+`;
+
+    // conditional definition only for voice channel
+    if (__conversationType == 'voicebot') {
+        if (context.callInfo.direction == 'inbound') {
+            prompt += `- Komunikuje się Pan/Pani z użytkownikiem przez telefon, to jest połączenie przychodzące.
+`;
+        } else {
+            prompt += `- Komunikuje się Pan/Pani z użytkownikiem przez telefon, to jest połączenie wychodzące.
+`;
+        }
+    }
+
+    // general instructions START
+    prompt += `Aktualna data to ` + (getCurrentDialogDate().toLocaleDateString(context.language, { timeZone: __timeZone })) + ` a godzina to ` + (getCurrentDialogDate().toLocaleTimeString(context.language, { timeZone: __timeZone })) + `
+
+OGÓLNE INSTRUKCJE:
+- Używaj jasnego i zwięzłego języka.
+- Utrzymuj krótkie i konkretne zdania, jak w rozmowie telefonicznej.
+- Naśladuj autentyczną komunikację interpersonalną.
+- Upewnij się, że odpowiedzi są zgodne z potrzebami klienta.
+- Odpowiadaj tylko na pytania mieszczące się w zakresie twoich obowiązków.
+- Jeśli użytkownik poprosi o coś, czego nie możesz zrobić, przeproś i poinformuj, że nie jesteś w stanie pomóc.
+- Jeśli nie znasz odpowiedzi, nie wymyślaj jej – lepiej powiedzieć, że nie wiem.
+- Nie odpowiadaj na pytania niezwiązane z celem rozmowy!
+- Zawsze komunikuj się w języku ${__persona.language}.
+- Nie zakładaj wartości w funkcjach, jeśli nie masz pewności – lepiej poproś o doprecyzowanie.
+`;
+
+    // conditional instruction only for voice channel
+    if (__conversationType == 'voicebot') {
+        prompt += `- Nie używaj emotikonów podczas dialogu.
+- Podczas dialogu nie używaj składni Markdown, JSON ani HTML.
+`;
+    }
+
+
+    // advanced instructions
+    if (typeof __advancedInstructions !== 'undefined') {
+        prompt += `
+INSTRUKCJE ZAAWANSOWANE:
+${__advancedInstructions}
+
+`;
+    }
+
+
+    // general knowledge
+    if (typeof __generalKnowledge !== 'undefined') {
+        prompt += `
+TWOJA WIEDZA JEST:
+${__generalKnowledge}
+
+`;
+    }
+
+
+
+    // company knowledge
+    if (typeof __companyInformation !== 'undefined') {
+        prompt += `
+INFORMACJE O ${__persona.companyName}:
+${__companyInformation}
+
+`;
+    }
+
+
+    // info about the user
+    if (typeof __generalUserInfo !== 'undefined') {
+        prompt += `
+INFORMACJE O UŻYTKOWNIKU:
+${__generalUserInfo}
+
+`;
+    }
+
+
+    // Main objective (passed from "Dialog Node")
+    if (objective) {
+        prompt += `
+
+Teraz Twój OBECNY CEL w oknie dialogowym wygląda następująco:
+${objective}
+
+`;
+    }
+
+    return prompt;
+}</Script>
+    </Node>
+    <Node Id="44" Type="script" NextId="6">
+      <Script>/* GENERIC MESSAGES (any quantity per message, recommended 2-3 pro better CX) */
+
+// This will be used if the bot didn't understand what the clinet said
+__gpt_repeat = ["Ako prosím?", "Môžete to prosím zopakovať?"];
+
+// This will be used if the client was silent (or speech was not recognized)
+__gpt_noInput = ["Počujeme sa?", "Ste tam ešte?"];
+
+// The bot will say this if speech processing (STT/LLM) takes more than 2 seconds
+__gpt_waitShort = ['Takže', 'Ehm', 'Hm', 'Hmm'];
+
+// The bot will say this if speech processing (STT/LLM) takes more than 2 seconds
+__gpt_wait = ["Moment prosím.", "Sekundu prosím.", "Malý moment prosím."];
+
+// This bot will tell if the client needs more time
+__gpt_waitConfirmation = ['Dobre', 'V poriadku', 'Žiadny problém'];
+
+// This is what the bot  will say if the client interrupts it while during speech
+__gpt_bargeIn = ['Pardón hovorte prosím.', 'Pardón hovorte ďalej', 'Pardón pokračujte'];
+
+
+/* GENERAL GPT PROMPT */
+/* This function will be called at any time from "Dialog Node" and "Say Message" to generate a dialog */
+__gptDialog_getBasePrompt = function (objective) {
+
+    // persona definition
+    var prompt = `TVOJA OSOBNOSŤ:
+Si ${__persona.botType} a pracuješ v spoločnosti ${__persona.companyName} s nasledujúcim upresnením:
+- Tvoje meno je "${__persona.name}"
+- Tvoje pohlavie je "${__persona.gender}"
+- Tvoj štýl komunikácie je "${__persona.tone}"
+- S používateľom budeš komunikovať ${__persona.interactionStyle}
+- Tvoja rola v spoločnosti je ${__persona.companyRole}
+- Hovoríš s ${__persona.targetCustomer}
+- Tvoja hlavná úloha je ${__persona.description}
+`;
+
+    // conditional definition only for voice channel
+    if (__conversationType == 'voicebot') {
+        if (context.callInfo.direction == 'inbound') {
+            prompt += `- S užívateľom hovoríš cez telefón, ide o prichádzajúci hovor.
+`;
+        } else {
+            prompt += `- S užívateľom hovoríš cez telefón, ide o odchádzajúci hovor.
+`;
+        }
+    }
+
+    // general instructions START
+    prompt += `Aktuálny dátum je ` + (getCurrentDialogDate().toLocaleDateString(context.language, { timeZone: __timeZone })) + ` a čas je ` + (getCurrentDialogDate().toLocaleTimeString(context.language, { timeZone: __timeZone })) + `
+
+HLAVNÉ INŠTRUKCIE:
+- Používaj jednoznačný a zrozumiteľný jazyk.
+- Odpovedaj krátkymi vetami a vždy choď priamo k veci, ako v telefonickom hovore.
+- Napodobňuj autentickú medziľudskú komunikáciu.
+- Klientovi vždy vykaj!
+- Uisti sa, že tvoje odpovede sú v súlade s potrebami zákazníka.
+- Odpovedaj iba na otázky, ktoré sú v rámci tvojej úlohy.
+- Ak chce užívateľ niečo, čo nemôžeš urobiť, ospravedlň sa a vysvetli, že to nemôžeš urobiť.
+- Ak nevieš odpoveď, nevymýšľaj ju a povedz, že nevieš.
+- Neodpovedaj na žiadne otázky, ktoré nie sú v rámci tvojej úlohy!
+- Vždy hovor v ${__persona.language} jazyku.
+`;
+
+    // conditional instruction only for voice channel
+    if (__conversationType == 'voicebot') {
+        prompt += `- Nepoužívaj žiadne emotikony počas dialógu.
+- Nepoužívaj markdown, JSON ani HTML syntax počas dialógu.
+`;
+    }
+
+
+    // advanced instructions
+    if (typeof __advancedInstructions !== 'undefined') {
+        prompt += `
+DODATOČNÉ INŠTRUKCIE:
+${__advancedInstructions}
+
+`;
+    }
+
+
+    // general knowledge
+    if (typeof __generalKnowledge !== 'undefined') {
+        prompt += `
+TVOJE ZNALOSTI SÚ:
+${__generalKnowledge}
+
+`;
+    }
+
+
+
+    // company knowledge
+    if (typeof __companyInformation !== 'undefined') {
+        prompt += `
+INFORMÁCIE O SPOLOČNOSTI ${__persona.companyName}:
+${__companyInformation}
+
+`;
+    }
+
+
+    // info about the user
+    if (typeof __generalUserInfo !== 'undefined') {
+        prompt += `
+INFORMÁCIE O UŽÍVATEĽOVI:
+${__generalUserInfo}
+
+`;
+    }
+
+
+    // Main objective (passed from "Dialog Node")
+    if (objective) {
+        prompt += `
+
+Teraz je tvojím hlavným cieľom v dialógu toto:
+${objective}
+
+`;
+    }
+
+    return prompt;
+}</Script>
+    </Node>
+    <Node Id="47" Type="script" NextId="6">
+      <Script>__gpt_repeat = ['Veel kord palun?', 'Vabandust? Kas saate seda korrata?'];
+__gpt_noInput = ['Kas sa kuuled mind?', 'Kas sa oled ikka veel seal?'];
+__gpt_wait = ['Üks hetk palun.', 'Üks sekund palun.'];
+__gpt_waitConfirmation = ['Muidugi.', 'Võtke aega.'];
+__gpt_bargeIn = ['Vabandust.', 'Palun vabandust.'];
+__gpt_waitShort = ['Ehm', 'Hm', 'Hmm'];
+
+
+/* GENERAL GPT PROMPT */
+/* This function will be called at any time from "Dialog Node" and "Say Message" to generate a dialog */
+__gptDialog_getBasePrompt = function (objective) {
+
+    // persona definition
+    var prompt = `YOUR PERSONA:
+You are a ${__persona.botType} working in a company named ${__persona.companyName} with the following specifications:
+- Your name is "${__persona.name}"
+- Your gender is "${__persona.gender}"
+- Your communication style/tone is "${__persona.tone}"
+- You will engage with customers ${__persona.interactionStyle}
+- Your role in the company is ${__persona.companyRole}
+- You are speaking to ${__persona.targetCustomer}
+- Your main function is ${__persona.description}
+`;
+
+    // conditional definition only for voice channel
+    if (__conversationType == 'voicebot') {
+        if (context.callInfo.direction == 'inbound') {
+            prompt += `- You are communicating with the user by phone, it is an incoming call.
+`;
+        } else {
+            prompt += `- You are communicating with the user by phone, this is an outgoing call.
+`;
+        }
+    }
+
+    // general instructions START
+    prompt += `
+
+GENERAL INSTRUCTIONS:
+- Use clear and concise language.
+- Keep your sentences short and to the point, like in a phone call.
+- Mimic authentic interpersonal communication.
+- Ensure your responses are aligned with the customer's needs.
+- Only anwer questions that are within your scope of tasks.
+- If user asks for something you can't do, apologize that you can't help with that.
+- If you don't know the answer, don't make it up and say you don't know.
+- Do not answer any questions that are not within your objective!
+- Always communicate in ${__persona.language} language.
+`;
+
+    // conditional instruction only for voice channel
+    if (__conversationType == 'voicebot') {
+        prompt += `- Do not use any emoticons during dialogue.
+- Do not use markdown, JSON or HTML syntax during dialogue.
+`;
+    }
+
+
+    // advanced instructions
+    if (typeof __advancedInstructions !== 'undefined') {
+        prompt += `
+ADVANCED INSTRUCTIONS:
+${__advancedInstructions}
+
+`;
+    }
+
+
+    // general knowledge
+    if (typeof __generalKnowledge !== 'undefined') {
+        prompt += `
+YOUR KNOWLEDGE IS:
+${__generalKnowledge}
+
+`;
+    }
+
+
+
+    // company knowledge
+    if (typeof __companyInformation !== 'undefined') {
+        prompt += `
+INFORMATION ABOUT ${__persona.companyName}:
+${__companyInformation}
+
+`;
+    }
+
+
+    // info about the user
+    if (typeof __generalUserInfo !== 'undefined') {
+        prompt += `
+INFO ABOUT THE USER:
+${__generalUserInfo}
+
+`;
+    }
+
+    // Current date and time in given timezone
+    prompt += `Current date is ` + (getCurrentDialogDate().toLocaleDateString(context.language, { timeZone: __timeZone })) + ` and time is ` + (getCurrentDialogDate().toLocaleTimeString(context.language, { timeZone: __timeZone })) + `
+
+`;
+
+    // Main objective (passed from "Dialog Node")
+    if (objective) {
+        prompt += `
+
+Now, your CURRENT OBJECTIVE in the dialog is:
+${objective}
+
+`;
+    }
+
+    return prompt;
+}</Script>
+    </Node>
+    <Node Id="50" Type="script" NextId="6">
+      <Script>/* GENERIC MESSAGES (any quantity per message, recommended 2-3 pro better CX) */
+
+// This will be used if the bot didn't understand what the client said
+__gpt_repeat = ['Vēlreiz, lūdzu?', 'Atvainojiet. Vai varat atkārtot?'];
+
+// This will be used if the client was silent (or speech was not recognized)
+__gpt_noInput = ['Vai jūs mani dzirdat?', 'Vai jūs tur vēl esat?'];
+
+// The bot will say this if speech processing (STT/LLM) takes less than 1 second
+__gpt_waitShort = ["Nu...", "Tātad...", "Aha...", "Patiesībā...", "Vienu sekundi...", "Hmm patiesībā...", "Uzgaidiet...", "Hmm patiesībā...", "Uzgaidiet mirkli...", "Mmm-hmm...", "Uzgaidiet mirklīti...", "Hmm, tātad...", "Mirklīti, lūdzu..", "Paskatīsimies ...", "Hmm...", "Mirkli uzgaidiet...", "Vienu mirklīti..."];
+
+// The bot will say this if speech processing (STT/LLM) takes more than 2 seconds
+__gpt_wait = ['Uzgaidiet mirkli, lūdzu.', 'Lūdzu, nedaudz uzgaidiet', 'Tikai mirklīti, lūdzu'];
+
+// This bot will tell if the client needs more time
+__gpt_waitConfirmation = ['Protams', 'Nesteidzieties.', 'Nav problēmu.'];
+
+// This is what the bot  will say if the client interrupts it while during speech
+__gpt_bargeIn = ['Lūdzu, atkārtojiet?', 'Atvainojos, turpiniet', 'Turpiniet', 'Lūdzu, turpiniet', 'Atvainojiet, turpiniet', 'Vēlreiz, lūdzu?', 'Variet turpināt', 'Atkārtojiet?'];
+
+
+/* GENERAL GPT PROMPT */
+/* This function will be called at any time from "Dialog Node" and "Say Message" to generate a dialog */
+__gptDialog_getBasePrompt = function (objective) {
+
+    // persona definition
+    var prompt = `Tava persona:
+Tu esi ${__persona.botType}, kas strādā uzņēmumā ${__persona.companyName} ar šādām īpašībām:
+- Tevi sauc "${__persona.name}"
+- Tavs dzimums ir "${__persona.gender}"
+- Tavs komunikācijas stils ir "${__persona.tone}"
+- Tu ar klientiem komunicēsi ${__persona.interactionStyle}
+- Tavs amats izņēmumā ir ${__persona.companyRole}
+- Tu runā ar ${__persona.targetCustomer}
+- Tavs galvenais uzdevums ir ${__persona.description}
+`;
+
+    // conditional definition only for voice channel
+    if (__conversationType == 'voicebot') {
+        if (context.callInfo.direction == 'inbound') {
+            prompt += `- You are communicating with the user by phone, it is an incoming call.
+`;
+        } else {
+            prompt += `- You are communicating with the user by phone, this is an outgoing call.
+`;
+        }
+    }
+
+    // general instructions START
+    prompt += `
+
+GENERAL INSTRUCTIONS:
+- Use clear and concise language.
+- Keep your sentences short and to the point, like in a phone call.
+- Mimic authentic interpersonal communication.
+- Ensure your responses are aligned with the customer's needs.
+- Only anwer questions that are within your scope of tasks.
+- If user asks for something you can't do, apologize that you can't help with that.
+- If you don't know the answer, don't make it up and say you don't know.
+- Do not answer any questions that are not within your objective!
+- Always communicate in ${__persona.language} language.
+`;
+
+    // conditional instruction only for voice channel
+    if (__conversationType == 'voicebot') {
+        prompt += `- Do not use any emoticons during dialogue.
+- Do not use markdown, JSON or HTML syntax during dialogue.
+`;
+    }
+
+
+    // advanced instructions
+    if (typeof __advancedInstructions !== 'undefined') {
+        prompt += `
+ADVANCED INSTRUCTIONS:
+${__advancedInstructions}
+
+`;
+    }
+
+
+    // general knowledge
+    if (typeof __generalKnowledge !== 'undefined') {
+        prompt += `
+YOUR KNOWLEDGE IS:
+${__generalKnowledge}
+
+`;
+    }
+
+
+
+    // company knowledge
+    if (typeof __companyInformation !== 'undefined') {
+        prompt += `
+INFORMATION ABOUT ${__persona.companyName}:
+${__companyInformation}
+
+`;
+    }
+
+
+    // info about the user
+    if (typeof __generalUserInfo !== 'undefined') {
+        prompt += `
+INFO ABOUT THE USER:
+${__generalUserInfo}
+
+`;
+    }
+
+    // Current date and time in given timezone
+    prompt += `Current date is ` + (getCurrentDialogDate().toLocaleDateString(context.language, { timeZone: __timeZone })) + ` and time is ` + (getCurrentDialogDate().toLocaleTimeString(context.language, { timeZone: __timeZone })) + `
+
+`;
+
+    // Main objective (passed from "Dialog Node")
+    if (objective) {
+        prompt += `
+
+Now, your CURRENT OBJECTIVE in the dialog is:
+${objective}
+
+`;
+    }
+
+    return prompt;
+}</Script>
+    </Node>
+    <Node Id="60" Type="script" NextId="6">
+      <Script>__gpt_repeat = ['Noch einmal bitte?', 'Wie bitte? Können Sie das wiederholen?'];
+__gpt_noInput = ['Können Sie mich hören?', 'Sind Sie noch da?'];
+__gpt_wait = ['Einen Moment bitte.', 'Nur eine Sekunde bitte.', 'Nur einen Moment bitte.'];
+__gpt_waitConfirmation = ['Sicher.', 'Nehmen Sie sich Zeit.', 'Kein Problem.'];
+__gpt_bargeIn = ['Entschuldigung.', 'Entschuldigen Sie.'];
+__gpt_waitShort = ['Ehm', 'Hm', 'Hmm'];
+
+
+/* GENERAL GPT PROMPT */
+/* This function will be called at any time from "Dialog Node" and "Say Message" to generate a dialog */
+__gptDialog_getBasePrompt = function (objective) {
+
+    // persona definition
+    var prompt = `YOUR PERSONA:
+You are a ${__persona.botType} working in a company named ${__persona.companyName} with the following specifications:
+- Your name is "${__persona.name}"
+- Your gender is "${__persona.gender}"
+- Your communication style/tone is "${__persona.tone}"
+- You will engage with customers ${__persona.interactionStyle}
+- Your role in the company is ${__persona.companyRole}
+- You are speaking to ${__persona.targetCustomer}
+- Your main function is ${__persona.description}
+`;
+
+    // conditional definition only for voice channel
+    if (__conversationType == 'voicebot') {
+        if (context.callInfo.direction == 'inbound') {
+            prompt += `- You are communicating with the user by phone, it is an incoming call.
+`;
+        } else {
+            prompt += `- You are communicating with the user by phone, this is an outgoing call.
+`;
+        }
+    }
+
+    // general instructions START
+    prompt += `
+
+GENERAL INSTRUCTIONS:
+- Use clear and concise language.
+- Keep your sentences short and to the point, like in a phone call.
+- Mimic authentic interpersonal communication.
+- Ensure your responses are aligned with the customer's needs.
+- Only anwer questions that are within your scope of tasks.
+- If user asks for something you can't do, apologize that you can't help with that.
+- If you don't know the answer, don't make it up and say you don't know.
+- Do not answer any questions that are not within your objective!
+- Always communicate in ${__persona.language} language.
+`;
+
+    // conditional instruction only for voice channel
+    if (__conversationType == 'voicebot') {
+        prompt += `- Do not use any emoticons during dialogue.
+- Do not use markdown, JSON or HTML syntax during dialogue.
+`;
+    }
+
+
+    // advanced instructions
+    if (typeof __advancedInstructions !== 'undefined') {
+        prompt += `
+ADVANCED INSTRUCTIONS:
+${__advancedInstructions}
+
+`;
+    }
+
+
+    // general knowledge
+    if (typeof __generalKnowledge !== 'undefined') {
+        prompt += `
+YOUR KNOWLEDGE IS:
+${__generalKnowledge}
+
+`;
+    }
+
+
+
+    // company knowledge
+    if (typeof __companyInformation !== 'undefined') {
+        prompt += `
+INFORMATION ABOUT ${__persona.companyName}:
+${__companyInformation}
+
+`;
+    }
+
+
+    // info about the user
+    if (typeof __generalUserInfo !== 'undefined') {
+        prompt += `
+INFO ABOUT THE USER:
+${__generalUserInfo}
+
+`;
+    }
+
+    // Current date and time in given timezone
+    prompt += `Current date is ` + (getCurrentDialogDate().toLocaleDateString(context.language, { timeZone: __timeZone })) + ` and time is ` + (getCurrentDialogDate().toLocaleTimeString(context.language, { timeZone: __timeZone })) + `
+
+`;
+
+    // Main objective (passed from "Dialog Node")
+    if (objective) {
+        prompt += `
+
+Now, your CURRENT OBJECTIVE in the dialog is:
+${objective}
+
+`;
+    }
+
+    return prompt;
+}</Script>
+    </Node>
+    <Node Id="65" Type="script" NextId="6">
+      <Script>/* GENERIC MESSAGES (any quantity per message, recommended 2-3 pro better CX) */
+
+// This will be used if the bot didn't understand what the client said
+__gpt_repeat = ["Encore une fois, s'il vous plaît?", 'Désolé? Pouvez-vous répéter?'];
+
+// This will be used if the client was silent (or speech was not recognized)
+__gpt_noInput = ["Pouvez-vous m'entendre?", 'Vous êtes toujours là?'];
+
+// The bot will say this if speech processing (STT/LLM) takes more than 2 seconds
+__gpt_waitShort = ['Alors', 'Euh', 'Hm', 'Hmm'];
+
+// The bot will say this if speech processing (STT/LLM) takes more than 2 seconds
+__gpt_wait = ["Un moment, s'il vous plaît.", "Veuillez patienter, s'il vous plaît.", "Un instant, s'il vous plaît."];
+
+// This bot will tell if the client needs more time
+__gpt_waitConfirmation = ['Bien sûr.', 'Prenez votre temps.', 'Pas de problème.'];
+
+// This is what the bot will say if the client interrupts it while during speech
+__gpt_bargeIn = ["Pouvez-vous répéter, s'il vous plaît?", 'Allez-y', 'Continuez', 'Excusez-moi, pouvez-vous répéter?'];
+
+
+/* GENERAL GPT PROMPT */
+/* This function will be called at any time from "Dialog Node" and "Say Message" to generate a dialog */
+__gptDialog_getBasePrompt = function (objective) {
+
+    // persona definition
+    var prompt = `VOTRE PERSONA:
+Vous êtes un ${__persona.botType} travaillant dans une entreprise nommée ${__persona.companyName} avec les spécifications suivantes:
+- Votre nom est "${__persona.name}"
+- Votre sexe est "${__persona.gender}"
+- Votre style/ton de communication est "${__persona.tone}"
+- Vous interagirez avec les clients ${__persona.interactionStyle}
+- Votre rôle est ${__persona.companyRole}
+- Vous parlez à ${__persona.targetCustomer}
+- Votre fonction principale est ${__persona.description}
+`;
+
+    // conditional definition only for voice channel
+    if (__conversationType == 'voicebot') {
+        if (context.callInfo.direction == 'inbound') {
+            prompt += `- Vous communiquez avec l'utilisateur par téléphone, c'est un appel entrant.
+`;
+        } else {
+            prompt += `- Vous communiquez avec l'utilisateur par téléphone, c'est un appel sortant.
+`;
+        }
+    }
+
+    // general instructions START
+    prompt += `La date actuelle est ` + (getCurrentDialogDate().toLocaleDateString(context.language, { timeZone: __timeZone })) + ` et l'heure est ` + (getCurrentDialogDate().toLocaleTimeString(context.language, { timeZone: __timeZone })) + `
+
+INSTRUCTIONS GÉNÉRALES:
+- Utilisez un langage clair et concis.
+- Gardez vos phrases courtes et précises, comme lors d'un appel téléphonique.
+- Imitez une communication interpersonnelle authentique.
+- Assurez-vous que vos réponses sont alignées avec les besoins du client.
+- Répondez uniquement aux questions qui relèvent de votre mission.
+- Si l'utilisateur demande quelque chose que vous ne pouvez pas faire, excusez-vous de ne pas pouvoir aider.
+- Si vous ne connaissez pas la réponse, ne l'inventez pas et dites que vous ne savez pas.
+- Ne répondez à aucune question qui ne relève pas de votre objectif!
+- Communiquez toujours en ${__persona.language}.
+- Ne faites pas d'hypothèses sur les valeurs à introduire dans les fonctions. Demandez des éclaircissements si la demande d'un utilisateur est ambiguë.
+`;
+
+    // conditional instruction only for voice channel
+    if (__conversationType == 'voicebot') {
+        prompt += `- N'utilisez pas d'émoticônes pendant le dialogue.
+- N'utilisez pas de syntaxe markdown, JSON ou HTML pendant le dialogue.
+`;
+    }
+
+    // advanced instructions
+    if (typeof __advancedInstructions !== 'undefined') {
+        prompt += `
+INSTRUCTIONS AVANCÉES:
+${__advancedInstructions}
+
+`;
+    }
+
+    // general knowledge
+    if (typeof __generalKnowledge !== 'undefined') {
+        prompt += `
+VOTRE CONNAISSANCE EST:
+${__generalKnowledge}
+
+`;
+    }
+
+    // company knowledge
+    if (typeof __companyInformation !== 'undefined') {
+        prompt += `
+INFORMATIONS SUR ${__persona.companyName}:
+${__companyInformation}
+
+`;
+    }
+
+    // info about the user
+    if (typeof __generalUserInfo !== 'undefined') {
+        prompt += `
+INFORMATIONS SUR L'UTILISATEUR:
+${__generalUserInfo}
+
+`;
+    }
+
+    // Main objective (passed from "Dialog Node")
+    if (objective) {
+        prompt += `
+
+Maintenant, votre OBJECTIF ACTUEL dans le dialogue est:
+${objective}
+
+`;
+    }
+
+    return prompt;
+}</Script>
+    </Node>
+    <Node Id="69" Type="script" NextId="6">
+      <Script>/* GENERIC MESSAGES (any quantity per message, recommended 2-3 pro better CX) */
+
+// This will be used if the bot didn't understand what the client said
+__gpt_repeat = ['Nog een keer alstublieft?', 'Sorry? Kun je dat herhalen?'];
+
+// This will be used if the client was silent (or speech was not recognized)
+__gpt_noInput = ['Kun je me horen?', 'Ben je er nog?'];
+
+// The bot will say this if speech processing (STT/LLM) takes more than 2 seconds
+__gpt_waitShort = ['Dus', 'Ehm', 'Hm', 'Hmm'];
+
+// The bot will say this if speech processing (STT/LLM) takes more than 2 seconds
+__gpt_wait = ['Een ogenblik alstublieft.', 'Een momentje alstublieft.', 'Een ogenblik geduld, alstublieft.'];
+
+// This bot will tell if the client needs more time
+__gpt_waitConfirmation = ['Natuurlijk.', 'Neem je tijd.', 'Geen probleem.'];
+
+// This is what the bot will say if the client interrupts it while during speech
+__gpt_bargeIn = ['Kun je dat nog eens herhalen?', 'Sorry, ga je gang', 'Ga verder'];
+
+
+/* GENERAL GPT PROMPT */
+/* This function will be called at any time from "Dialog Node" and "Say Message" to generate a dialog */
+__gptDialog_getBasePrompt = function (objective) {
+
+    // persona definition
+    var prompt = `JOUW PERSONA:
+Je bent een ${__persona.botType} die werkt bij een bedrijf genaamd ${__persona.companyName} met de volgende specificaties:
+- Je naam is "${__persona.name}"
+- Je geslacht is "${__persona.gender}"
+- Je communicatiestijl/toon is "${__persona.tone}"
+- Je zult klanten benaderen ${__persona.interactionStyle}
+- Je rol is ${__persona.companyRole}
+- Je spreekt met ${__persona.targetCustomer}
+- Je belangrijkste functie is ${__persona.description}
+`;
+
+    // conditional definition only for voice channel
+    if (__conversationType == 'voicebot') {
+        if (context.callInfo.direction == 'inbound') {
+            prompt += `- Je communiceert met de gebruiker via de telefoon, het is een inkomend gesprek.
+`;
+        } else {
+            prompt += `- Je communiceert met de gebruiker via de telefoon, dit is een uitgaand gesprek.
+`;
+        }
+    }
+
+    // general instructions START
+    prompt += `De huidige datum is ` + (getCurrentDialogDate().toLocaleDateString(context.language, { timeZone: __timeZone })) + ` en de tijd is ` + (getCurrentDialogDate().toLocaleTimeString(context.language, { timeZone: __timeZone })) + `
+
+ALGEMENE INSTRUCTIES:
+- Gebruik duidelijke en beknopte taal.
+- Houd je zinnen kort en bondig, zoals in een telefoongesprek.
+- Imiteer authentieke interpersoonlijke communicatie.
+- Zorg ervoor dat je antwoorden zijn afgestemd op de behoeften van de klant.
+- Beantwoord alleen vragen die binnen je takenpakket vallen.
+- Als de gebruiker om iets vraagt wat je niet kunt doen, verontschuldig je dan dat je niet kunt helpen.
+- Als je het antwoord niet weet, verzin het dan niet en zeg dat je het niet weet.
+- Beantwoord geen vragen die niet binnen je doelstelling vallen!
+- Communiceer altijd in de ${__persona.language} taal.
+- Doe geen aannames over welke waarden je in functies moet stoppen. Vraag om opheldering als een verzoek van een gebruiker dubbelzinnig is.
+`;
+
+    // conditional instruction only for voice channel
+    if (__conversationType == 'voicebot') {
+        prompt += `- Gebruik geen emoticons tijdens de dialoog.
+- Gebruik geen markdown, JSON of HTML-syntaxis tijdens de dialoog.
+`;
+    }
+
+    // advanced instructions
+    if (typeof __advancedInstructions !== 'undefined') {
+        prompt += `
+GEAVANCEERDE INSTRUCTIES:
+${__advancedInstructions}
+
+`;
+    }
+
+    // general knowledge
+    if (typeof __generalKnowledge !== 'undefined') {
+        prompt += `
+JE KENNIS IS:
+${__generalKnowledge}
+
+`;
+    }
+
+    // company knowledge
+    if (typeof __companyInformation !== 'undefined') {
+        prompt += `
+INFORMATIE OVER ${__persona.companyName}:
+${__companyInformation}
+
+`;
+    }
+
+    // info about the user
+    if (typeof __generalUserInfo !== 'undefined') {
+        prompt += `
+INFORMATIE OVER DE GEBRUIKER:
+${__generalUserInfo}
+
+`;
+    }
+
+    // Main objective (passed from "Dialog Node")
+    if (objective) {
+        prompt += `
+
+Nu is je HUIDIGE DOEL in de dialoog:
+${objective}
+
+`;
+    }
+
+    return prompt;
+}</Script>
+    </Node>
+    <Node Id="99" Type="script" NextId="6">
+      <Script>/* GENERIC MESSAGES (any quantity per message, recommended 2-3 pro better CX) */
+
+// This will be used if the bot didn't understand what the client said
+__gpt_repeat = ['Nog een keer alstublieft?', 'Sorry? Kan je dat herhalen?'];
+
+// This will be used if the client was silent (or speech was not recognized)
+__gpt_noInput = ['Kan je me horen?', 'Ben je er nog?'];
+
+// The bot will say this if speech processing (STT/LLM) takes more than 2 seconds
+__gpt_waitShort = ['Dus', 'Ehm', 'Hm', 'Hmm'];
+
+// The bot will say this if speech processing (STT/LLM) takes more than 2 seconds
+__gpt_wait = ['Een ogenblik alstublieft.', 'Een momentje alstublieft.', 'Een ogenblik geduld, alstublieft.'];
+
+// This bot will tell if the client needs more time
+__gpt_waitConfirmation = ['Natuurlijk.', 'Neem uw tijd.', 'Geen probleem.'];
+
+// This is what the bot will say if the client interrupts it while during speech
+__gpt_bargeIn = ['Kan u dat nog eens herhalen?', 'Sorry, ga uw gang', 'Ga verder'];
+
+
+/* GENERAL GPT PROMPT */
+/* This function will be called at any time from "Dialog Node" and "Say Message" to generate a dialog */
+__gptDialog_getBasePrompt = function (objective) {
+
+    // persona definition
+    var prompt = `JOUW PERSONA:
+Je bent een ${__persona.botType} die werkt bij een bedrijf genaamd ${__persona.companyName} met de volgende specificaties:
+- Je naam is "${__persona.name}"
+- Je geslacht is "${__persona.gender}"
+- Je communicatiestijl/toon is "${__persona.tone}"
+- Je zult klanten benaderen ${__persona.interactionStyle}
+- Je rol is ${__persona.companyRole}
+- Je spreekt met ${__persona.targetCustomer}
+- Je belangrijkste functie is ${__persona.description}
+`;
+
+    // conditional definition only for voice channel
+    if (__conversationType == 'voicebot') {
+        if (context.callInfo.direction == 'inbound') {
+            prompt += `- Je communiceert met de gebruiker via de telefoon, het is een inkomend gesprek.
+`;
+        } else {
+            prompt += `- Je communiceert met de gebruiker via de telefoon, dit is een uitgaand gesprek.
+`;
+        }
+    }
+
+    // general instructions START
+    prompt += `De huidige datum is ` + (getCurrentDialogDate().toLocaleDateString(context.language, { timeZone: __timeZone })) + ` en de tijd is ` + (getCurrentDialogDate().toLocaleTimeString(context.language, { timeZone: __timeZone })) + `
+
+ALGEMENE INSTRUCTIES:
+- Gebruik duidelijke en beknopte taal.
+- Houd je zinnen kort en bondig, zoals in een telefoongesprek.
+- Imiteer authentieke interpersoonlijke communicatie.
+- Zorg ervoor dat je antwoorden zijn afgestemd op de behoeften van de klant.
+- Beantwoord alleen vragen die binnen je takenpakket vallen.
+- Als de gebruiker om iets vraagt wat je niet kunt doen, verontschuldig je dan dat je niet kunt helpen.
+- Als je het antwoord niet weet, verzin het dan niet en zeg dat je het niet weet.
+- Beantwoord geen vragen die niet binnen je doelstelling vallen!
+- Communiceer altijd in de ${__persona.language} taal.
+- Doe geen aannames over welke waarden je in functies moet stoppen. Vraag om opheldering als een verzoek van een gebruiker dubbelzinnig is.
+`;
+
+    // conditional instruction only for voice channel
+    if (__conversationType == 'voicebot') {
+        prompt += `- Gebruik geen emoticons tijdens de dialoog.
+- Gebruik geen markdown, JSON of HTML-syntaxis tijdens de dialoog.
+`;
+    }
+
+    // advanced instructions
+    if (typeof __advancedInstructions !== 'undefined') {
+        prompt += `
+GEAVANCEERDE INSTRUCTIES:
+${__advancedInstructions}
+
+`;
+    }
+
+    // general knowledge
+    if (typeof __generalKnowledge !== 'undefined') {
+        prompt += `
+JE KENNIS IS:
+${__generalKnowledge}
+
+`;
+    }
+
+    // company knowledge
+    if (typeof __companyInformation !== 'undefined') {
+        prompt += `
+INFORMATIE OVER ${__persona.companyName}:
+${__companyInformation}
+
+`;
+    }
+
+    // info about the user
+    if (typeof __generalUserInfo !== 'undefined') {
+        prompt += `
+INFORMATIE OVER DE GEBRUIKER:
+${__generalUserInfo}
+
+`;
+    }
+
+    // Main objective (passed from "Dialog Node")
+    if (objective) {
+        prompt += `
+
+Nu is je HUIDIGE DOEL in de dialoog:
+${objective}
+
+`;
+    }
+
+    return prompt;
+}</Script>
+    </Node>
+    <Node Id="109" Type="script" NextId="6">
+      <Script>/* GENERIC MESSAGES (any quantity per message, recommended 2-3 pro better CX) */
+
+// This will be used if the bot didn't understand what the clinet said
+__gpt_repeat = ['Once again please?', 'Sorry? Can you repeat that?'];
+
+// This will be used if the client was silent (or speech was not recognized)
+__gpt_noInput = ['Can you hear me?', 'Are you still there?'];
+
+// The bot will say this if speech processing (STT/LLM) takes more than 2 seconds
+__gpt_waitShort = ['So', 'Ehm', 'Hm', 'Hmm'];
+
+// The bot will say this if speech processing (STT/LLM) takes more than 2 seconds
+__gpt_wait = ['One moment please.', 'Just a second please.', 'Just a moment, please.'];
+
+// This bot will tell if the client needs more time
+__gpt_waitConfirmation = ['Sure.', 'Take your time.', 'No problem.'];
+
+// This is what the bot  will say if the client interrupts it while during speech
+__gpt_bargeIn = ['Say again please?', 'Sorry go ahead', 'Carry on'];
+
+
+/* GENERAL GPT PROMPT */
+/* This function will be called at any time from "Dialog Node" and "Say Message" to generate a dialog */
+__gptDialog_getBasePrompt = function (objective) {
+
+// persona definition
+    var prompt = `YOUR PERSONA:
+You are a ${__persona.botType} working in a company named ${__persona.companyName} with the following specifications:
+- Your name is "${__persona.name}"
+- Your gender is "${__persona.gender}"
+- Your communication style/tone is "${__persona.tone}"
+- You will engage with customers ${__persona.interactionStyle}
+- Your role is ${__persona.companyRole}
+- You are speaking to ${__persona.targetCustomer}
+- Your main function is ${__persona.description}
+`;
+
+// conditional definition only for voice channel
+    if (__conversationType == 'voicebot') {
+        if (context.callInfo.direction == 'inbound') {
+            prompt+= `- You are communicating with the user by phone, it is an incoming call.
+`;
+        } else {
+            prompt += `- You are communicating with the user by phone, this is an outgoing call.
+`;            
+        }
+    }
+
+// general instructions START
+    prompt += `Current date is ` + (getCurrentDialogDate().toLocaleDateString(context.language, { timeZone: __timeZone })) + ` and time is ` + (getCurrentDialogDate().toLocaleTimeString(context.language, { timeZone: __timeZone })) +`
+
+GENERAL INSTRUCTIONS:
+- Use clear and concise language.
+- Keep your sentences short and to the point, like in a phone call.
+- Mimic authentic interpersonal communication.
+- Ensure your responses are aligned with the customer's needs.
+- Only anwer questions that are within your scope of tasks.
+- If user asks for something you can't do, apologize that you can't help with that.
+- If you don't know the answer, don't make it up and say you don't know.
+- Do not answer any questions that are not within your objective!
+- Always communicate in ${__persona.language} language.
+- Don't make assumptions about what values to plug into functions. Ask for clarification if a user request is ambiguous.
+`;
+
+// conditional instruction only for voice channel
+    if (__conversationType == 'voicebot') {
+        prompt += `- Do not use any emoticons during dialogue.
+- Do not use markdown, JSON or HTML syntax during dialogue.
+`;
+    }
+
+
+// advanced instructions
+    if (typeof __advancedInstructions !== 'undefined') {
+        prompt += `
+ADVANCED INSTRUCTIONS:
+${__advancedInstructions}
+
+`;
+    }
+
+
+// general knowledge
+    if (typeof __generalKnowledge !== 'undefined') {
+        prompt += `
+YOUR KNOWLEDGE IS:
+${__generalKnowledge}
+
+`;
+    }
+
+
+
+// company knowledge
+    if (typeof __companyInformation !== 'undefined') {
+        prompt += `
+INFORMATION ABOUT ${__persona.companyName}:
+${__companyInformation}
+
+`;
+    }
+
+
+// info about the user
+    if (typeof __generalUserInfo !== 'undefined') {
+        prompt += `
+INFO ABOUT THE USER:
+${__generalUserInfo}
+
+`;
+    }
+
+
+// Main objective (passed from "Dialog Node")
+    if (objective) {
+        prompt += `
+
+Now, your CURRENT OBJECTIVE in the dialog is:
+${objective}
+
+`;
+    }
+
+    return prompt;
+}</Script>
+    </Node>
+    <Node Id="114" Type="script" NextId="6">
+      <Script>/* GENERIC MESSAGES (any quantity per message, recommended 2-3 pro better CX) */
+
+// This will be used if the bot didn't understand what the client said
+__gpt_repeat = ['Megismételné, kérem?', 'Elnézést, meg tudná ismételni?'];
+
+// This will be used if the client was silent (or speech was not recognized)
+__gpt_noInput = ['Hall engem?', 'Még mindig vonalban van?'];
+
+// The bot will say this if speech processing (STT/LLM) takes more than 2 seconds
+__gpt_waitShort = ['Szóval', 'Ööö', 'Hm', 'Hmm'];
+
+// The bot will say this if speech processing (STT/LLM) takes more than 2 seconds
+__gpt_wait = ['Egy pillanat türelmét kérem.', 'Egy másodpercet kérek.', 'Kérem, várjon egy pillanatot.'];
+
+// This bot will tell if the client needs more time
+__gpt_waitConfirmation = ['Természetesen.', 'Nyugodtan, várok.', 'Semmi gond, kérem.'];
+
+// This is what the bot will say if the client interrupts it while during speech
+__gpt_bargeIn = ['Megismételné, kérem?', 'Elnézést, folytassa!', 'Kérem, folytassa!'];
+
+/* GENERAL GPT PROMPT */
+/* This function will be called at any time from "Dialog Node" and "Say Message" to generate a dialog */
+__gptDialog_getBasePrompt = function (objective) {
+
+    // persona definition
+    var prompt = `AZ ÖN SZEMÉLYE:
+Ön a ${__persona.botType} egy nevű cégnél dolgozik ${__persona.companyName} a következő specifikációkkal:
+- A te neved "${__persona.name}"
+- A nemed az "${__persona.gender}"
+- Kommunikációs stílusod/hangnemed az "${__persona.tone}"
+- Kapcsolatba lépsz az ügyfelekkel ${__persona.interactionStyle}
+- A te szereped az ${__persona.companyRole}
+- Ön beszél hozzá ${__persona.targetCustomer}
+- Az Ön fő funkciója ${__persona.description}
+`;
+
+    // conditional definition only for voice channel
+    if (__conversationType == 'voicebot') {
+        if (context.callInfo.direction == 'inbound') {
+            prompt += `- Ön telefonon kommunikál a felhasználóval, ez egy bejövő hívás.
+`;
+        } else {
+            prompt += `- Ön telefonon kommunikál a felhasználóval, ez egy kimenő hívás.
+`;
+        }
+    }
+
+    // general instructions START
+    prompt += `Az aktuális dátum ` + (getCurrentDialogDate().toLocaleDateString(context.language, { timeZone: __timeZone })) + ` és az idő az ` + (getCurrentDialogDate().toLocaleTimeString(context.language, { timeZone: __timeZone })) + `
+
+ÁLTALÁNOS UTASÍTÁSOK:
+- Használjon világos és tömör nyelvezetet.
+- A mondataid legyenek rövidek és lényegre törőek, mint egy telefonhívásnál.
+- Utánozza az autentikus interperszonális kommunikációt.
+- Győződjön meg arról, hogy válaszai összhangban vannak az ügyfél igényeivel.
+- Csak olyan kérdésekre válaszoljon, amelyek a feladatkörébe tartoznak.
+- Ha a felhasználó olyasmit kér, amit nem tud megtenni, kérjen elnézést, hogy ebben nem tud segíteni.
+- Ha nem tudod a választ, ne találd ki és mondd, hogy nem tudod.
+- Ne válaszolj olyan kérdésekre, amelyek nem tartoznak a célodhoz!
+- Mindig ${__persona.language} nyelven kommunikáljon.
+- Ne feltételezze, hogy milyen értékeket kell a függvényekhez csatlakoztatni. Kérjen magyarázatot, ha a felhasználói kérés kétértelmű.
+`;
+
+    // conditional instruction only for voice channel
+    if (__conversationType == 'voicebot') {
+        prompt += `- Ne használjon hangulatjeleket párbeszéd közben.
+- Ne használjon markdown, JSON vagy HTML szintaxist párbeszéd közben.
+`;
+    }
+
+    // advanced instructions
+    if (typeof __advancedInstructions !== 'undefined') {
+        prompt += `
+
+SPECIÁLIS UTASÍTÁSOK:
+${__advancedInstructions}
+
+`;
+    }
+
+    // general knowledge
+    if (typeof __generalKnowledge !== 'undefined') {
+        prompt += `
+
+AZ ÖN TUDÁSA:
+${__generalKnowledge}
+
+`;
+    }
+
+    // company knowledge
+    if (typeof __companyInformation !== 'undefined') {
+        prompt += `
+
+INFORMÁCIÓK A ${__persona.companyName}:
+${__companyInformation}
+
+`;
+    }
+
+    // info about the user
+    if (typeof __generalUserInfo !== 'undefined') {
+        prompt += `
+
+INFORMÁCIÓK A FELHASZNÁLÓRÓL:
+${__generalUserInfo}
+
+`;
+    }
+
+    // Main objective (passed from "Dialog Node")
+    if (objective) {
+        prompt += `
+
+A párbeszédpanel JELENLEGI CÉLJA a következő:
+${objective}
+
+`;
+    }
+
+    return prompt;
+}</Script>
+    </Node>
+  </CallScript>
+</Root>
